@@ -1,0 +1,18 @@
+Use of stack pointer and stack frame layout
+
+| an               |
+| ...              |
+| a3               |
+| a2               |
+| a1               |
+____________________
+| return value     | -- e.g. used in case of struct return by value
+-------------------- <- sp
+| local variable 1 |
+| local variable 2 |
+| ...              |
+| local data ...   |
+
+* caller allocates memory for arguments and return address
+* calle DOES NOT cchange sp upon saving register/local variables, it SUBTRACTS stack size when it calls, and ADDS stack size back when the calls finishes. Through perspective of the callee, dedicated stack frame does gets allocated. The reason we do this is so we can store value (e.g. spill a register, allocate array, etc) without knowing size of the stack frame beforehand.
+* within the same function, value of $sp remains constant in every store and load except those in between SaveRegister and RestoreRegister

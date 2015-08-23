@@ -1,0 +1,128 @@
+from common import *
+import flow
+
+
+def get_one(col):
+    return next(iter(col))
+
+
+def color(g, k):
+    '''
+    optimistic coloring
+    precondition: `g` is a graph where keys are vertices
+    and values are sets of vertices neighboring keys
+    '''
+    vs = set(g.keys())
+    stack = []
+    removed = set()
+    while len(vs) > 0:
+        for v in vs: 
+            if len(g[v] - removed) < k:
+                break 
+        vs.remove(v)
+        removed.add(v)
+        stack.append(v) 
+
+    colors = set(range(k))
+    coloring = {}
+    uncolored = []
+    while len(stack) > 0:
+        v = stack.pop()
+        removed.remove(v) 
+        used_colors = {coloring[neighbor] for neighbor in (g[v] - removed)} 
+        if len(used_colors) >= k:
+            uncolored.append(v)
+            coloring[v] = None
+        else:
+            coloring[v] = get_one(colors - used_colors)
+    return coloring, uncolored
+
+
+def make_int_graph(cfg, liveouts):
+    g = {}
+    for n in cfg.vertices.keys():
+        inst = cfg.inst(n)
+        if type(inst) != IR:
+            continue
+        defed = cfg.def_(n)
+        uninterfered = [defed]
+        if defed is None:
+            continue
+        if inst.opcode == 'assign' and type(inst.rs) == Register:
+            # move instruction 
+            uninterfered.append(inst.rs)
+        if defed.typ != 'virtual':
+            continue
+        if defed not in g:
+            g[defed] = set()
+        for reg in liveouts[n]:
+            if reg in uninterfered or reg.typ != 'virtual':
+                continue
+            g[defed].add(reg)
+            g[reg].add(defed)
+    return g 
+
+
+# TODO use saved registers
+def alloc(compiler):
+    '''
+    given a function compiler, allocate registers for its registers
+    '''
+    # only use temporary registers for now
+    k = 18 # s0 - s7 and t0 - t9
+    insts = compiler.insts
+    cfg = flow.make_cfg(insts)
+    liveouts = flow.get_liveouts(cfg)
+    coloring, uncolored = color(make_int_graph(cfg, liveouts), k) 
+    while len(uncolored) > 0: # have to spill 
+        spilled = set(uncolored)
+        new_insts = []
+        addrs = {}
+        for reg in uncolored:
+            addrs[reg] = compiler.alloc(size=4)
+        for inst in insts:
+            defed, used = get_defuse(inst)
+            for reg in used:
+                if reg in spilled: # load spilled from memory 
+                    new_insts.append(IR('load', rt=reg, rs=REG_SP, rd=addrs[reg]))
+            new_insts.append(inst)
+            if defed in spilled: # store def
+                new_insts.append(IR('store', rt=defed, rs=REG_SP, rd=addrs[defed]))
+        insts = new_insts
+        cfg = make_cfg(insts)
+        liveouts = flow.get_liveouts(cfg)
+        coloring, uncolored = color(make_int_graph(cfg, liveouts), k) 
+
+    # keep register living across function calls (jal)
+    # in saved register and the rest in temporarys 
+    calls = (n for n, inst in cfg.vertices.iteritems()
+            if type(inst) == IR and inst.opcode == 'jal')
+    # colors that should be mapped in saved registers
+    saved = set(coloring[reg] for call in calls
+            for reg in liveouts[call]
+            if reg in coloring) 
+    # there are only 8 saved registers
+    while len(saved) > 8:
+        saved.pop() 
+    # $s0 - $s7
+    sregs = [Register('s', i) for i in range(7+1, 0, -1)]
+    # $t0 - $t9
+    tregs = [Register('t', i) for i in range(9+1, 0, -1)] 
+    # mapping: colors -> registers
+    translations = {
+            color: sregs.pop() if color in saved else tregs.pop()
+            for color in set(coloring.values())} 
+    # replace virtual registers with physical registers
+    compiler.insts = []
+    for inst in insts: 
+        if type(inst) == IR:
+            opcode, rs, rt, rd = inst
+            if rs in coloring:
+                rs = translations[coloring[rs]]
+            if rt in coloring:
+                rt = translations[coloring[rt]]
+            if rd in coloring:
+                rd = translations[coloring[rd]]
+            inst = IR(opcode, rs, rt, rd)
+        compiler.insts.append(inst)
+    compiler.registers = translations.values()
