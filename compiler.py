@@ -27,13 +27,13 @@ def to_mips_type(ctype):
     if ctype == 'int' or type(ctype) == ast.Pointer:
         return 'word'
     elif ctype == 'char':
-        return 'byte'
-
+        return 'byte' 
 
 
 def repr_text(text): 
     name, typ, init = text
     return '%s:\t.%s\t%s' % (name, to_mips_type(typ), init or 0)
+
 
 
 def repr_register(reg):
