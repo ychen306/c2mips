@@ -102,12 +102,15 @@ def alloc(compiler):
             for reg in liveouts[call]
             if reg in coloring) 
     # there are only 8 saved registers
+    # so we need to use some t registers to hold values that
+    # live across function calls
+    saved_tregs = []
     while len(saved) > 8:
-        saved.pop() 
+        saved_tregs.append(saved.pop())
     # $s0 - $s7
-    sregs = [Register('s', i) for i in range(7+1, 0, -1)]
+    sregs = [Register('s', i) for i in range(7+1, -1, -1)]
     # $t0 - $t9
-    tregs = [Register('t', i) for i in range(9+1, 0, -1)] 
+    tregs = [Register('t', i) for i in range(9+1, -1, -1)] 
     # mapping: colors -> registers
     translations = {
             color: sregs.pop() if color in saved else tregs.pop()
@@ -125,4 +128,5 @@ def alloc(compiler):
                 rd = translations[coloring[rd]]
             inst = IR(opcode, rs, rt, rd)
         compiler.insts.append(inst)
-    compiler.registers = translations.values()
+    compiler.sregs = saved
+    compiler.saved_tregs = saved_tregs

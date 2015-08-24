@@ -18,19 +18,20 @@ REG_ZERO = Register('zero', None) # $zero
 #     * load -- lbu, lhu, lui, lw === R[rt] = M[R[rs]+rd]
 IR = namedtuple('IR', ['opcode', 'rs', 'rt', 'rd'])
 NOP = IR('nop', rs=None, rt=None, rd=None)
-# IR to store registers and allocate extra stack space for arguments before function call
-SaveRegisters = namedtuple('SaveRegisters', ['compiler', 'extra'])
-# IR to restore registers deallocate stack space after function call 
-RestoreRegisters = namedtuple('RestoreRegisters', ['compiler', 'extra'])
-# IR to save saved register and grow stack frame
-Prolog = namedtuple('Prolog', ['compiler'])
+# IR to store $t registers and allocate extra stack space for arguments before function call
+SaveRegisters = namedtuple('SaveRegisters', ['extra'])
+# IR to restore registers and deallocate space for arguments after function call 
+RestoreRegisters = namedtuple('RestoreRegisters', ['extra'])
+# IR to save $s registers and grow stack frame
+Prolog = namedtuple('Prolog', [])
 # "ir" representing text section
-Text = namedtuple('TextSegment', ['name', 'typ', 'init'])
+Data = namedtuple('Data', ['name', 'typ', 'init'])
 # IR to restore saved register and shrink stack frame and emmit jal 
-Epilog = namedtuple('Epilog', ['compiler'])
+Epilog = namedtuple('Epilog', [])
+
 
 store_opcodes = set(['store', 'sw', 'sh', 'sb'])
-load_opcodes = set(['load', 'lbu', 'lhu', 'lui', 'lw'])
+load_opcodes = set(['load', 'lbu', 'lhu', 'lui', 'lw', 'la'])
 
 
 def is_store(opcode):
@@ -39,6 +40,7 @@ def is_store(opcode):
 
 def is_load(opcode):
     return opcode in load_opcodes
+
 
 branches = set(['beq', 'bne', 'bgt', 'bge', 'blt', 'ble'])
 def is_branch(opcode):

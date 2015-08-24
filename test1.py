@@ -1,7 +1,4 @@
-# test emmitter for various expressions
-from compiler import *
-
-
+from compiler import compile
 
 compile('''
         int x = 0;

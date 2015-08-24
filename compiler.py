@@ -6,13 +6,6 @@ from collections import namedtuple
 from pprint import pprint
 
 
-DEBUG = True
-def debug(x):
-    if DEBUG:
-        print '#',
-        pprint(x)
-
-
 # a value can either be a register or a constant.
 # a value can be in memory, regardless of its type 
 # e.g. `s.field` can be of type int but with its register
@@ -30,8 +23,8 @@ def to_mips_type(ctype):
         return 'byte' 
 
 
-def repr_text(text): 
-    name, typ, init = text
+def repr_data(data): 
+    name, typ, init = data
     return '%s:\t.%s\t%s' % (name, to_mips_type(typ), init or 0)
 
 
@@ -45,10 +38,10 @@ def repr_register(reg):
     return reg
 
 
-# TODO make this comprehensive and better
+# TODO make this comprehensive
 def repr_ir(ir):
     '''
-    function for debugging
+    ir formating
     '''
     typ = type(ir)
     if typ == str: # branch
@@ -246,7 +239,7 @@ def emmit_bin_exp(compiler, exp):
         struct = compiler.exp(exp.left)
         field = exp.right
         assert field.is_('IDENT') 
-        offset = get_offset(struct.typ, field) 
+        offset = offsetof(struct.typ, field) 
         addr = new_reg()
         compiler.emmit_one(IR(opcode='add', rs=struct.val, rt=offset, rd=addr))
         return Value(val=addr, in_mem=True, typ=field.typ)
@@ -310,7 +303,8 @@ def emmit_postfix_exp(compiler, exp):
     emmit instructions for a++ and a--
     '''
     name = exp.expr # MUST be an `IDENT`
-    prev_val = compiler.exp_val(name).val # value of x++
+    prev_val = new_reg() # value of x++
+    compiler.emmit_one(IR('assign', rd=prev_val, rs=compiler.exp_val(name).val, rt=None))
     var = compiler.scope.lookup(name.val) # x itself
     diff = sizeof(var.typ.typ) if is_pointer(var) else 1
     post_val = new_reg()
@@ -330,7 +324,7 @@ def emmit_call_exp(compiler, exp):
     # extra space needed for arguments and return value
     extra = sum(sizeof(arg.typ) for arg in func.args) +\
             sizeof(func.ret)
-    compiler.emmit_one(SaveRegisters(compiler, extra))
+    compiler.emmit_one(SaveRegisters(extra))
     compiler.alloc_args(func.ret, args)
     compiler.emmit_one(IR('jal', rs=func_name, rd=None, rt=None)) 
     ret_val = None
@@ -342,7 +336,7 @@ def emmit_call_exp(compiler, exp):
             ret_size = grammar.Int(sizeof(func.ret))
             compiler.emmit_one(IR('sub', rd=reg, rs=REG_FP, rt=ret_size))
             ret_val = Value(val=reg, in_mem=True, typ=func.ret)
-    compiler.emmit_one(RestoreRegisters(compiler, extra))
+    compiler.emmit_one(RestoreRegisters(extra))
     return ret_val
 
 
@@ -374,6 +368,11 @@ def emmit_assignment(compiler, assignment):
     return var
 
 
+# TODO
+def offsetof(typ, field):
+    pass
+
+# TODO this doensn't consider struct padding
 def sizeof(typ):
     '''
     return number of bytes of a typ
@@ -453,7 +452,7 @@ class FunctionCompiler(object):
         # branch name is the same function name 
         self.emmit_many(
             self.name,
-            Prolog(self))
+            Prolog())
         offset = sizeof(self.func.ret)
         # add arguments into scope
         for i, arg in enumerate(self.func.args):
@@ -471,7 +470,7 @@ class FunctionCompiler(object):
 
         if self.func.body is not None:
             self.statement(self.func.body) 
-            self.emmit_one(Epilog(self))
+            self.emmit_one(Epilog())
         
         reg_alloc.alloc(self)
 
@@ -479,10 +478,6 @@ class FunctionCompiler(object):
         self.scope = Scope(self.scope)
 
     def pop_scope(self):
-        debug('-------------')
-        debug('poping scope:')
-        debug(self.scope.env)
-        debug('-------------')
         self.scope = self.scope.parent
 
     def alloc_args(self, ret_type, args):
@@ -631,7 +626,7 @@ class FunctionCompiler(object):
                self.emmit_one(IR('sub', rd=dest, rs=REG_FP, rt=size))
                self.memcpy(src=result.reg, dest=dest, size=size)
                self.assign(IR('assign', rd=REG_RET, rs=REG_FP, rt=None))
-       self.emmit_one(Epilog(self)) 
+       self.emmit_one(Epilog()) 
 
     def exp(self, exp): 
         '''
@@ -667,7 +662,7 @@ def compile_func(func, global_env):
 
 def declare_global(scope, name, typ, init=None):
     scope.add(name, Value(val=name, typ=typ, in_mem=True))
-    return Text(name=name, typ=typ, init=init)
+    return Data(name=name, typ=typ, init=init)
 
 
 # TODO support struct and array literal declaration
@@ -695,11 +690,11 @@ def compile(src):
             code = compile_declr(stmt, global_env)
             if type(code) == list: 
                 insts.extend(code)
-            else: # text 
+            else: # data
                 declrs.append(code)
     print '.data'
     for declr in declrs:
-        print repr_text(declr)
+        print repr_data(declr)
     print '.text'
     for inst in insts:
         print repr_ir(inst)
