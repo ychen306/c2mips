@@ -332,10 +332,13 @@ def emmit_call_exp(compiler, exp):
         if fits_register(func.ret):
             ret_val = Value(val=REG_RET, in_mem=False, typ=func.ret)
         else: 
-            reg = new_reg()
-            ret_size = grammar.Int(sizeof(func.ret))
-            compiler.emmit_one(IR('sub', rd=reg, rs=REG_FP, rt=ret_size))
-            ret_val = Value(val=reg, in_mem=True, typ=func.ret)
+            ret_addr = new_reg()
+            # frame will be shrinked to free space of addr and ret val
+            # we need to move return value into stack
+            stack_offset = compiler.alloc(func.ret)
+            compiler.emmit_one(IR('add', rd=ret_addr, rs=REG_SP, rt=stack_offset))
+            compiler.memcpy(src=REG_FP, dest=ret_addr, size=sizeof(func.ret))
+            ret_val = Value(val=ret_addr, in_mem=True, typ=func.ret)
     compiler.emmit_one(RestoreRegisters(extra))
     return ret_val
 
@@ -464,7 +467,7 @@ class FunctionCompiler(object):
             else:
                 # arguments passed by memory
                 reg = new_reg()
-                self.emmit_one(IR('sub', rd=reg, rs=REG_FP, rt=offset))
+                self.emmit_one(IR('add', rd=reg, rs=REG_FP, rt=offset))
                 self.scope.add(arg.name.val, Value(val=reg, in_mem=True, typ=arg.typ)) 
             offset += size
 
@@ -500,7 +503,7 @@ class FunctionCompiler(object):
                     self.emmit_one(IR('assign', rd=val, rs=arg.val, rt=None))
                 else:
                     val = arg.val
-                self.emmit_one(IR('store', rt=val, rs=REG_FP, rd=-offset))
+                self.emmit_one(IR('store', rt=val, rs=REG_FP, rd=offset))
 
     # TODO load byte by bytes
     def memcpy(self, src, dest, size):
@@ -623,9 +626,7 @@ class FunctionCompiler(object):
            else: 
                size = grammar.Int(sizeof(result.typ))
                dest = new_reg()
-               self.emmit_one(IR('sub', rd=dest, rs=REG_FP, rt=size))
-               self.memcpy(src=result.reg, dest=dest, size=size)
-               self.assign(IR('assign', rd=REG_RET, rs=REG_FP, rt=None))
+               self.memcpy(src=result.reg, dest=REG_FP, size=size)
        self.emmit_one(Epilog()) 
 
     def exp(self, exp): 

@@ -1,5 +1,5 @@
 from common import *
-import flow
+import flow 
 
 
 def get_one(col):
@@ -63,7 +63,6 @@ def make_int_graph(cfg, liveouts):
     return g 
 
 
-# TODO use saved registers
 def alloc(compiler):
     '''
     given a function compiler, allocate registers for its registers
@@ -95,8 +94,8 @@ def alloc(compiler):
 
     # keep register living across function calls (jal)
     # in saved register and the rest in temporarys 
-    calls = (n for n, inst in cfg.vertices.iteritems()
-            if type(inst) == IR and inst.opcode == 'jal')
+    calls = [n for n, inst in cfg.vertices.iteritems()
+            if type(inst) == IR and inst.opcode == 'jal']
     # colors that should be mapped in saved registers
     saved = set(coloring[reg] for call in calls
             for reg in liveouts[call]

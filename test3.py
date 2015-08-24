@@ -6,8 +6,7 @@ compile('''
             }
         void main() {
             int x = 0;
-            int y =x++; 
-            x += 1;
+            int y =x; 
             add(x, y);
             }
         ''')
