@@ -21,7 +21,7 @@ def get_defuse(inst):
     opcode, rs, rt, rd = inst
     defed = None
     if is_load(opcode):
-        used = [rs if type(rs) == Register else None]
+        used = [rs] if type(rs) == Register else []
         defed = rt if type(rt) == Register else None
     else:
         defed = rd if type(rd) is Register else None

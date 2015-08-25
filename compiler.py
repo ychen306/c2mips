@@ -452,6 +452,8 @@ class FunctionCompiler(object):
         global_env.add(self.name, func_declr.typ)
 
     def gen_ir(self):
+        if self.func.body is None:
+            return
         # branch name is the same function name 
         self.emmit_many(
             self.name,
