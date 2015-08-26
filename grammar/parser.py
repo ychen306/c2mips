@@ -4,6 +4,8 @@ import ast
 
 prim_types = set(['int', 'char', 'void']) 
 
+# TODO rewrite declaration parsing so that something like 
+# int a = foo(); can be parsed
 
 #
 # Operator precedence according to man page
@@ -170,7 +172,7 @@ class Value(object):
         self.val = val 
 
     def __repr__(self):
-        return "<%s:%s>" % (self.typ, self.val)
+        return str(self.val)
 
     def is_(self, typ):
         return self.typ == typ

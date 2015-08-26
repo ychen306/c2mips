@@ -14,6 +14,9 @@ What's supported:
     * if
     * types 
     * line and block comment
+    * builtin (magic) funcitons
+        * print_str
+        * print_int
 
 What's not supported/limitations:
     * NO floating point calculation

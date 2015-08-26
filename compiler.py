@@ -1,10 +1,14 @@
-from grammar import parse, ast
 import grammar
+from grammar import parse, ast
 from common import *
 import reg_alloc
+import flow
 from collections import namedtuple
-from pprint import pprint
 
+builtin_declrs = ''' 
+void print_str(char *s);
+void print_int(int n);
+'''
 
 # a value can either be a register or a constant.
 # a value can be in memory, regardless of its type 
@@ -25,8 +29,7 @@ def to_mips_type(ctype):
 
 def repr_data(data): 
     name, typ, init = data
-    return '%s:\t.%s\t%s' % (name, to_mips_type(typ), init or 0)
-
+    return '%s:\t.%s\t%s' % (name, typ, init or 0) 
 
 
 def repr_register(reg):
@@ -36,6 +39,11 @@ def repr_register(reg):
             num = ''
         return '$%s%s' % (typ, num) 
     return reg
+
+
+def assign(dest, src):
+    opcode = 'move' if type(src) == Register else 'li'
+    return IR(opcode, rd=dest, rs=src, rt=None) 
 
 
 # TODO make this comprehensive
@@ -53,12 +61,13 @@ def repr_ir(ir):
         rd = repr_register(rd)
         if opcode in ('beq', 'bne', 'blt', 'ble', 'bgt'):
             fields = opcode, rs, rt, rd 
-        elif opcode in ('j', 'jal'):
+        elif opcode in ('j', 'jal', 'jr'):
             fields = opcode, rs
-        elif opcode == 'assign':
+        elif opcode in ('li', 'move'):
             fields = opcode, rd, rs
-        elif opcode in ('load', 'store', 'la'):
-            fields = opcode, rt, rs, rd
+        elif is_store(opcode) or is_load(opcode):
+            addr = rs if not rs.startswith('$') else "%r(%s)"% (rd, rs)
+            return "\t%s\t%s,\t%s"% (opcode, rt, addr)
         else:
             fields = opcode, rd, rs, rt
         return '\t%s\t%s' % (fields[0], ',\t'.join(str(f) for f in fields[1:]))
@@ -304,7 +313,7 @@ def emmit_postfix_exp(compiler, exp):
     '''
     name = exp.expr # MUST be an `IDENT`
     prev_val = new_reg() # value of x++
-    compiler.emmit_one(IR('assign', rd=prev_val, rs=compiler.exp_val(name).val, rt=None))
+    compiler.emmit_one(assign(dest=prev_val, src=compiler.exp_val(name).val))
     var = compiler.scope.lookup(name.val) # x itself
     diff = sizeof(var.typ.typ) if is_pointer(var) else 1
     post_val = new_reg()
@@ -312,7 +321,7 @@ def emmit_postfix_exp(compiler, exp):
     if var.in_mem:
         compiler.store(src=post_val, dest=var.val)
     else:
-        compiler.emmit_one(IR('assign', rd=var.val, rs=post_val, rt=None))
+        compiler.emmit_one(assign(dest=var.val, src=post_val))
     return Value(val=prev_val, in_mem=False, typ=var.typ) 
 
 
@@ -330,7 +339,9 @@ def emmit_call_exp(compiler, exp):
     ret_val = None
     if func.ret not in (None, 'void'):
         if fits_register(func.ret):
-            ret_val = Value(val=REG_RET, in_mem=False, typ=func.ret)
+            reg = new_reg()
+            compiler.emmit_one(assign(dest=reg, src=REG_RET))
+            ret_val = Value(val=reg, in_mem=False, typ=func.ret)
         else: 
             ret_addr = new_reg()
             # frame will be shrinked to free space of addr and ret val
@@ -357,17 +368,13 @@ def emmit_assignment(compiler, assignment):
     if var.in_mem: # store instead of assign
         if type(src) != Register: # can only store value in register
             reg = new_reg()
-            compiler.emmit_one(IR('assign', rd=reg, rs=src, rt=None))
+            compiler.emmit_one(assign(dest=reg, src=src))
             frm = reg
         else:
             frm = src
         compiler.emmit_one(IR('store', rt=frm, rs=dest, rd=grammar.Int(0)))
     else: # assign
-        compiler.emmit_one(
-                IR('assign',
-                    rd=dest,
-                    rs=src,
-                    rt=None))
+        compiler.emmit_one(assign(dest=dest, src=src))
     return var
 
 
@@ -433,6 +440,22 @@ def fits_register(typ):
             type(typ) == ast.Pointer) 
 
 
+def store_regs(regs, offset, insts):
+    '''
+    batch-store registers on stack
+    '''
+    for i, reg in enumerate(regs):
+        insts.append(IR('sw', rt=reg, rs=REG_SP, rd=offset+i*4))
+
+
+def load_regs(regs, offset, insts):
+    '''
+    batch-load registers from stack
+    '''
+    for i, reg in enumerate(regs):
+        insts.append(IR('lw', rt=reg, rs=REG_SP, rd=offset+i*4))
+
+
 # TODO
 # abstract all store into a function to make 
 # sure constants are loaded into register
@@ -448,6 +471,7 @@ class FunctionCompiler(object):
         self.scope = Scope(global_env)
         self.allocated = []
         self.name = func_declr.name.val
+        self.declared_strs = []
         # for recursive function
         global_env.add(self.name, func_declr.typ)
 
@@ -464,7 +488,8 @@ class FunctionCompiler(object):
             size = sizeof(arg.typ)
             if i < 4 and fits_register(arg.typ):
                 # arguments passed by register
-                reg = Register('a', str(i))
+                reg = new_reg()
+                self.emmit_one(assign(dest=reg, src=Register('a', str(i))))
                 self.scope.add(arg.name.val, Value(val=reg, in_mem=False, typ=arg.typ))
             else:
                 # arguments passed by memory
@@ -475,9 +500,72 @@ class FunctionCompiler(object):
 
         if self.func.body is not None:
             self.statement(self.func.body) 
-            self.emmit_one(Epilog())
+            if not type(self.insts[-1]) == Epilog:
+                self.emmit_one(Epilog())
         
         reg_alloc.alloc(self)
+        self.remove_placeholders()
+
+    def remove_placeholders(self):
+        ''' 
+        replace Prolog/Epilog/SaveRegisters/RestoreRegisters with real instructions
+        now that we know what registers are used
+        '''
+        cfg = flow.make_cfg(self.insts)
+        ins, outs = flow.get_lives(cfg)
+        # t registers that need to be saved
+        tregs = []
+        for node in sorted(cfg.get_calls()): 
+            tregs.append({reg for reg in outs[node]
+                if reg.typ == 't'})
+        space = (max(len(regs) for regs in tregs) * 4
+                if len(tregs) > 0
+                else 0) 
+        t_offset = self.alloc(size=space)
+        s_offset = self.alloc(size=len(self.sregs)*4+4)
+        # replace prologs/epilogs with stores and loads
+        insts = []
+        if len(tregs) > 0:
+            regs = tregs.pop()
+        else:
+            regs = []
+        for inst in self.insts:
+            inst_type = type(inst)
+            if inst_type == SaveRegisters: 
+                store_regs(regs, t_offset, insts)
+                insts.extend([
+                    IR('sub', rd=REG_SP, rs=REG_SP, rt=grammar.Int(inst.extra)),
+                    IR('sub', rd=REG_FP, rs=REG_FP, rt=grammar.Int(inst.extra+self.stack_size()))])
+            elif inst_type == RestoreRegisters:
+                load_regs(regs, t_offset, insts)
+                insts.extend([
+                    IR('add', rd=REG_SP, rs=REG_SP, rt=grammar.Int(inst.extra)),
+                    IR('add', rd=REG_FP, rs=REG_FP, rt=grammar.Int(inst.extra+self.stack_size()))]) 
+                if len(tregs) > 0:
+                    regs = tregs.pop()
+                else:
+                    regs = []
+            elif inst_type == Prolog:
+                # grow stack and store needed s registers
+                grow = IR('sub',
+                        rd=REG_SP,
+                        rs=REG_SP,
+                        rt=grammar.Int(self.stack_size()))
+                insts.append(grow) 
+                store_regs(self.sregs+[REG_RA], s_offset, insts)
+            elif inst_type == Epilog:
+                # restore used registers
+                load_regs(self.sregs+[REG_RA], s_offset, insts)
+                insts.append(IR('add',
+                    rd=REG_SP,
+                    rs=REG_SP,
+                    rt=grammar.Int(self.stack_size())))
+                insts.append(IR('jr', rs=Register('ra', None), rt=None, rd=None))
+            else:
+                insts.append(inst)
+        self.insts = insts
+
+
 
     def new_scope(self):
         self.scope = Scope(self.scope)
@@ -498,11 +586,11 @@ class FunctionCompiler(object):
         for i, arg in enumerate(args):
             offset += sizeof(arg.typ)
             if i < 4 and fits_register(arg.typ):
-                self.emmit_one(IR('assign', rd=Register('a', str(i)), rs=arg.val, rt=None))
+                self.emmit_one(assign(dest=Register('a', str(i)), src=arg.val))
             else: # store argument in memory
                 if type(arg.val) != Register: # can store value in register
                     val = new_reg()
-                    self.emmit_one(IR('assign', rd=val, rs=arg.val, rt=None))
+                    self.emmit_one(assign(dest=val, src=arg.val))
                 else:
                     val = arg.val
                 self.emmit_one(IR('store', rt=val, rs=REG_FP, rd=offset))
@@ -515,7 +603,7 @@ class FunctionCompiler(object):
         temp = new_reg()
         word_size = grammar.Int(4)
         self.emmit_many(
-            IR('assign', rd=offset, rs=REG_ZERO, rt=None),
+            assign(dest=offset, src=REG_ZERO),
             copy_loop,
             IR('bgt', rs=offset, rt=grammar.Int(size), rd=copy_done), 
             IR('lw', rt=temp, rs=src, rd=offset),
@@ -532,7 +620,7 @@ class FunctionCompiler(object):
     def emmit_many(self, *insts):
         self.insts.extend(insts)
 
-    # TODO refactor emmission of stores to use this function
+    # TODO refactor all emmission of stores to use this function
     def store(self, src, dest, offset=grammar.Int(0)): 
         self.emmit_one(IR('store', rt=src, rs=dest, rd=offset))
 
@@ -562,8 +650,9 @@ class FunctionCompiler(object):
         self.scope.add(struct.name.val, struct) 
 
     def alloc(self, typ=None, size=None):
+        assert typ is not None or size is not None
         offset = self.stack_size() 
-        self.allocated.append(size or sizeof(typ))
+        self.allocated.append(size if size is not None else sizeof(typ))
         return offset
 
     def stack_size(self):
@@ -620,16 +709,16 @@ class FunctionCompiler(object):
             self.exp(stmt) 
 
     def return_(self, stmt):
-       if stmt.val is not None:
-           result = self.exp(stmt.val)
-           if fits_register(result.typ): 
-               val = self.load(result.val) if result.in_mem else result.val
-               self.emmit_one(IR('assign', rd=REG_RET, rs=val, rt=None))
-           else: 
-               size = grammar.Int(sizeof(result.typ))
-               dest = new_reg()
-               self.memcpy(src=result.reg, dest=REG_FP, size=size)
-       self.emmit_one(Epilog()) 
+        if stmt.val is not None:
+            result = self.exp(stmt.val)
+            if fits_register(result.typ): 
+                val = self.load(result.val) if result.in_mem else result.val
+                self.emmit_one(assign(dest=REG_RET, src=val))
+            else: 
+                size = grammar.Int(sizeof(result.typ))
+                dest = new_reg()
+                self.memcpy(src=result.reg, dest=REG_FP, size=size)
+        self.emmit_one(Epilog()) 
 
     def exp(self, exp): 
         '''
@@ -643,6 +732,13 @@ class FunctionCompiler(object):
         elif exp.is_('IDENT'):
             name = exp.val
             return self.scope.lookup(name)
+        elif exp.typ == 'STRING':
+            # need to allocate in text segment 
+            str_name = gensym('___str')
+            s = new_reg()
+            self.declared_strs.append((str_name, exp.val))
+            self.emmit_one(IR('la', rt=s, rs=str_name, rd=grammar.Int(0)))
+            return Value(val=s, in_mem=False, typ=ast.Pointer('char'))
         else: # plain value 
             return Value(val=exp, in_mem=False, typ=exp.typ)
 
@@ -657,23 +753,25 @@ class FunctionCompiler(object):
             return v
 
 
-def compile_func(func, global_env):
+def compile_func(func, global_env, global_declrs):
     c = FunctionCompiler(func, global_env)
     c.gen_ir()
+    for str_name, str_val in c.declared_strs: 
+        global_declrs.append(Data(str_name, 'asciiz', '"%s"'% str_val))
     return c.insts
 
 
 def declare_global(scope, name, typ, init=None):
     scope.add(name, Value(val=name, typ=typ, in_mem=True))
-    return Data(name=name, typ=typ, init=init)
+    return Data(name=name, typ=to_mips_type(typ), init=init)
 
 
 # TODO support struct and array literal declaration
-def compile_declr(declr, global_env):
+def compile_declr(declr, global_env, global_declrs):
     if type(declr) == ast.Declaration:
         typ = declr.typ
         if type(typ) == ast.Function:
-            return compile_func(declr, global_env) 
+            return compile_func(declr, global_env, global_declrs) 
         else:
             return declare_global(global_env, declr.name.val, typ)
     else: # declare with init.  
@@ -681,23 +779,25 @@ def compile_declr(declr, global_env):
         return declare_global(global_env, declr.name.val, declr.typ, init.val) 
 
 
-def compile(src):
+def compile(src, out):
     insts = []
     declrs = []
     global_env = Scope()
-    for stmt in map(desugar, parse(src)):
+    for stmt in map(desugar, parse(builtin_declrs+src)):
         typ = type(stmt) 
         # there are two types of declaration:
         # delcaration or struct definition
         if typ == ast.Declaration or typ == ast.DeclrAssign:
-            code = compile_declr(stmt, global_env)
+            code = compile_declr(stmt, global_env, declrs)
             if type(code) == list: 
                 insts.extend(code)
             else: # data
                 declrs.append(code)
-    print '.data'
+    out.write('.data\n')
     for declr in declrs:
-        print repr_data(declr)
-    print '.text'
+        out.write(repr_data(declr)+'\n')
+    out.write('.text\n')
     for inst in insts:
-        print repr_ir(inst)
+        out.write(repr_ir(inst)+'\n')
+    with open('builtin.s') as builtin_src:
+        out.write(builtin_src.read()) 

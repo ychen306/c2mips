@@ -5,15 +5,17 @@ REG_SP = Register('sp', None) # $sp
 REG_FP = Register('fp', None) # $fp
 REG_RET = Register('v', 0) # $v0
 REG_ZERO = Register('zero', None) # $zero
+REG_RA = Register('ra', None) # $ra
 
 # quads. ir
 # format:
-#   jal {rs} 
-#   j {rs}
-#   beq {rs} {rt} {rd}
-#   bne {rs} {rt} {rd}
+#   jal  {rs} 
+#   j    {rs}
+#   beq  {rs} {rt} {rd}
+#   bne  {rs} {rt} {rd}
+#   li   {rd} {rs}
+#   move {rd} {rs}
 # list of intermediate (fake) opcode 
-#     * assign -- li or move  === R[rd] = rs
 #     * store -- sw, sh, or sb === R[rs+rd] = R[rt]
 #     * load -- lbu, lhu, lui, lw === R[rt] = M[R[rs]+rd]
 IR = namedtuple('IR', ['opcode', 'rs', 'rt', 'rd'])

@@ -70,6 +70,10 @@ class CFG(object):
             self.defuse[v] = defuse
             return defuse[0] 
 
+    def get_calls(self):
+        return (n for n, inst in self.vertices.iteritems()
+                if type(inst) == IR and inst.opcode == 'jal')
+
 
 def make_cfg(insts):
     '''
@@ -106,7 +110,7 @@ def make_cfg(insts):
     return CFG(g, vertices) 
 
 
-def get_liveouts(cfg):
+def get_lives(cfg):
     '''
     in[n] = use[n] | (out[n] - def[n])
     out[n] = sum of in[s]
@@ -127,4 +131,4 @@ def get_liveouts(cfg):
                 num_fixed += 1
         if num_fixed == len(cfg.vertices.keys()):
             break
-    return out 
+    return in_, out 

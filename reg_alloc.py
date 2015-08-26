@@ -48,8 +48,7 @@ def make_int_graph(cfg, liveouts):
         uninterfered = [defed]
         if defed is None:
             continue
-        if inst.opcode == 'assign' and type(inst.rs) == Register:
-            # move instruction 
+        if inst.opcode == 'move':
             uninterfered.append(inst.rs)
         if defed.typ != 'virtual':
             continue
@@ -62,7 +61,6 @@ def make_int_graph(cfg, liveouts):
             g[reg].add(defed)
     return g 
 
-
 def alloc(compiler):
     '''
     given a function compiler, allocate registers for its registers
@@ -71,7 +69,7 @@ def alloc(compiler):
     k = 18 # s0 - s7 and t0 - t9
     insts = compiler.insts
     cfg = flow.make_cfg(insts)
-    liveouts = flow.get_liveouts(cfg)
+    _, liveouts = flow.get_lives(cfg)
     coloring, uncolored = color(make_int_graph(cfg, liveouts), k) 
     while len(uncolored) > 0: # have to spill 
         spilled = set(uncolored)
@@ -89,17 +87,16 @@ def alloc(compiler):
                 new_insts.append(IR('store', rt=defed, rs=REG_SP, rd=addrs[defed]))
         insts = new_insts
         cfg = make_cfg(insts)
-        liveouts = flow.get_liveouts(cfg)
+        _, liveouts = flow.get_lives(cfg)
         coloring, uncolored = color(make_int_graph(cfg, liveouts), k) 
 
     # keep register living across function calls (jal)
     # in saved register and the rest in temporarys 
-    calls = [n for n, inst in cfg.vertices.iteritems()
-            if type(inst) == IR and inst.opcode == 'jal']
+    calls = cfg.get_calls()
     # colors that should be mapped in saved registers
-    saved = set(coloring[reg] for call in calls
+    saved = {coloring[reg] for call in calls
             for reg in liveouts[call]
-            if reg in coloring) 
+            if reg in coloring}
     # there are only 8 saved registers
     # so we need to use some t registers to hold values that
     # live across function calls
@@ -127,5 +124,4 @@ def alloc(compiler):
                 rd = translations[coloring[rd]]
             inst = IR(opcode, rs, rt, rd)
         compiler.insts.append(inst)
-    compiler.sregs = saved
-    compiler.saved_tregs = saved_tregs
+    compiler.sregs = [translations[c] for c in saved]
