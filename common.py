@@ -33,7 +33,7 @@ Epilog = namedtuple('Epilog', [])
 
 
 store_opcodes = set(['store', 'sw', 'sh', 'sb'])
-load_opcodes = set(['load', 'lbu', 'lhu', 'lui', 'lw', 'la'])
+load_opcodes = set(['load', 'lbu', 'lhu', 'lui', 'lw', 'la', 'lb'])
 
 
 def is_store(opcode):

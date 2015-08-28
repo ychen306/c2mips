@@ -59,6 +59,7 @@ def make_int_graph(cfg, liveouts):
                 continue
             g[defed].add(reg)
             g[reg].add(defed)
+
     return g 
 
 def alloc(compiler):
@@ -78,7 +79,7 @@ def alloc(compiler):
         for reg in uncolored:
             addrs[reg] = compiler.alloc(size=4)
         for inst in insts:
-            defed, used = get_defuse(inst)
+            defed, used = flow.get_defuse(inst)
             for reg in used:
                 if reg in spilled: # load spilled from memory 
                     new_insts.append(IR('load', rt=reg, rs=REG_SP, rd=addrs[reg]))
@@ -98,7 +99,7 @@ def alloc(compiler):
             for reg in liveouts[call]
             if reg in coloring}
     # there are only 8 saved registers
-    # so we need to use some t registers to hold values that
+    # we need to use some t registers to hold values that
     # live across function calls
     saved_tregs = []
     while len(saved) > 8:
@@ -123,5 +124,9 @@ def alloc(compiler):
             if rd in coloring:
                 rd = translations[coloring[rd]]
             inst = IR(opcode, rs, rt, rd)
+            if any(type(u) == Register and u.typ == 'virtual' for u in (rs, rt)):
+                # if there's any virtual registers left
+                # it means it's a dead value hence the instruction is dead code
+                continue
         compiler.insts.append(inst)
     compiler.sregs = [translations[c] for c in saved]

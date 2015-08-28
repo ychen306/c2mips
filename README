@@ -10,7 +10,7 @@ What's supported:
     * ++ and -- operators 
     * logical operator: not, and, or
     * function
-    * loops - for/while
+    * loops - for/while (no do-while)
     * if
     * types 
     * line and block comment
@@ -19,8 +19,9 @@ What's supported:
         * print_int
 
 What's not supported/limitations:
-    * NO floating point calculation
-    * goto
+	* struct can't be return value -- do this by passing in struct pointer to receive return value
+    * NO floating point calculation (at least not yet)
+    * gotos
     * sizeof -- you don't really need this if you don't do allocate memory on the heap anyway
     * function pointer
     * switch statement
@@ -30,6 +31,3 @@ What's not supported/limitations:
     * typedef
     * declaration list (e.g. "int a, b" is not allowed and "int a; int b;" should be used instead)
     * all function declaration's arguments should be named -- e.g. "int add(int, int);" is not allowed and "int add(int a, int b)" should be used instead
-
-Why so many restriction?
-    * I started this project while on a plane and I decided to only support the bare minimum to have fun not headache.
