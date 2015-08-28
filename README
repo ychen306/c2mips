@@ -1,33 +1,32 @@
 Compiler that compiles a subset of C to MIPS
 What's supported:
-    * types: struct,
-        int (4 byte),
-        char (1 byte),
-        pointer (4 byte),
-        array (pointer),
-        string (0 terminated char array)
-    * arithmetic operators: +-*/ (including pointer arithmetic)
-    * ++ and -- operators 
-    * logical operator: not, and, or
-    * function
-    * loops - for/while (no do-while)
-    * if
-    * types 
-    * line and block comment
-    * builtin (magic) funcitons
-        * print_str
-        * print_int
-
+	* types: struct,
+	int (4 byte),
+	char (1 byte),
+	pointer (4 byte),
+	array (pointer),
+	string (0 terminated char array)
+	* arithmetic operators: +-*/ (including pointer arithmetic)
+	* ++ and -- operators 
+	* logical operator: not, and, or
+	* function
+	* loops - for/while (no do-while)
+	* if
+	* types 
+	* line and block comment
+	* builtin (magic) funcitons
+	* print_str
+	* print_int
+	
 What's not supported/limitations:
-	* struct can't be return value -- do this by passing in struct pointer to receive return value
-    * NO floating point calculation (at least not yet)
-    * gotos
-    * sizeof -- you don't really need this if you don't do allocate memory on the heap anyway
-    * function pointer
-    * switch statement
-    * to simplify the parser, only decimal constants are supported
-    * typecast
-    * ternary operator
-    * typedef
-    * declaration list (e.g. "int a, b" is not allowed and "int a; int b;" should be used instead)
-    * all function declaration's arguments should be named -- e.g. "int add(int, int);" is not allowed and "int add(int a, int b)" should be used instead
+	* NO floating point calculation (at least not yet)
+	* gotos
+	* sizeof -- you don't really need this if you don't do allocate memory on the heap anyway
+	* function pointer
+	* switch statement
+	* to simplify the parser, only decimal constants are supported
+	* typecast
+	* ternary operator
+	* typedef
+	* declaration list (e.g. "int a, b" is not allowed and "int a; int b;" should be used instead)
+	* all function declaration's arguments should be named -- e.g. "int add(int, int);" is not allowed and "int add(int a, int b)" should be used instead
