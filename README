@@ -17,16 +17,3 @@ What's supported:
 	* builtin (magic) funcitons
 	* print_str
 	* print_int
-	
-What's not supported/limitations:
-	* NO floating point calculation (at least not yet)
-	* gotos
-	* sizeof -- you don't really need this if you don't do allocate memory on the heap anyway
-	* function pointer
-	* switch statement
-	* to simplify the parser, only decimal constants are supported
-	* typecast
-	* ternary operator
-	* typedef
-	* declaration list (e.g. "int a, b" is not allowed and "int a; int b;" should be used instead)
-	* all function declaration's arguments should be named -- e.g. "int add(int, int);" is not allowed and "int add(int a, int b)" should be used instead
