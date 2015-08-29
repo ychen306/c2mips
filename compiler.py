@@ -309,7 +309,14 @@ def emmit_prefix_exp(compiler, exp):
         if not operand.in_mem:
             val = operand._replace(in_mem=True, typ=typ)
         else:
-            val = operand._replace(typ=typ)
+            # we have to load from memory.
+            # what this means is we have the operand being something like `a.ptr`,
+            # where `ptr` is a pointer
+            # and when we say `*a.ptr`, we actually need to emmit something like
+            # lw    $t0,    0($t1) # assuming $t1 is the addr. of ptr
+            # and return this `Value(typ=typ, val=$t0, in_mem=True)`
+            addr = compiler.load(operand.val)
+            val = Value(val=addr, in_mem=True, typ=typ)
         return val
 
 
