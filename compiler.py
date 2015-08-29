@@ -270,7 +270,7 @@ def emmit_prefix_exp(compiler, exp):
     # ('++' and '--' has been desugared as '+=' ad '-=')
     op = exp.op
     result = new_reg()
-    operand = compiler.exp_val(exp.expr)
+    operand = compiler.exp_val(exp.expr) if op != '&' else compiler.exp(exp.expr)
     if op == '!' or op == '-':
         opcode = 'not' if op == '!' else 'neg'
         compiler.emmit_one(IR(
