@@ -753,13 +753,6 @@ class FunctionCompiler(object):
             if type(declr.typ) == ast.Array:
                 arr = declr.typ
                 val = val._replace(typ=ast.Pointer(typ=arr.typ))
-                # at least one of cap or initialing layout should be provided
-                if (arr.cap is None and
-                        (type(stmt) != ast.DeclrAssign or type(stmt.val) is not ast.Layout)):
-                    raise Exception("Invalid array declaration: no initiazlier")
-                if arr.cap is None:
-                    layout = stmt.val
-                    arr = arr._replace(cap=len(layout.fields))
                 offset = self.alloc(arr)
             else: # struct
                 val = val._replace(in_mem=True)
