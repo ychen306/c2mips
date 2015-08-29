@@ -352,7 +352,8 @@ class Parser(object):
         '''
         while is_type_modifier(e):
             if type(e) == ast.Index:
-                typ = ast.Array(typ=typ, cap=int(e.index.val))
+                cap = int(e.index.val) if e.index is not None else None
+                typ = ast.Array(typ=typ, cap=cap)
                 e = e.array
             else:
                 typ = ast.Pointer(typ=typ)

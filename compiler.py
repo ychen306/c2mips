@@ -341,7 +341,7 @@ def emmit_call_exp(compiler, exp):
     # all functions are called by value
     args = map(compiler.exp_val, exp.args)
     # extra space needed for arguments and return value
-    extra = sum(sizeof(arg.typ) for arg in func.args) +\
+    extra = sum(sizeof(get_arg_type(arg)) for arg in func.args) +\
             sizeof(func.ret)
     compiler.emmit_one(SaveRegisters(extra))
     compiler.alloc_args(func, args)
@@ -492,7 +492,8 @@ def mulof4(n):
 # consider array here
 def fits_register(typ):
     return (typ in ('char', 'int') or
-            type(typ) == ast.Pointer) 
+            type(typ) == ast.Pointer or
+            type(typ) == ast.Array)
 
 
 def store_regs(regs, offset, insts):
@@ -509,6 +510,14 @@ def load_regs(regs, offset, insts):
     '''
     for i, reg in enumerate(regs):
         insts.append(IR('lw', rt=reg, rs=REG_SP, rd=offset+i*4))
+
+
+def get_arg_type(arg):
+    if type(arg.typ) == ast.Array:
+        arg_type = ast.Pointer(arg.typ.typ)
+    else:
+        arg_type = arg.typ
+    return arg_type
 
 
 # TODO
@@ -543,17 +552,18 @@ class FunctionCompiler(object):
         offset = sizeof(self.func.ret)
         # add arguments into scope
         for i, arg in enumerate(self.func.args):
-            size = sizeof(arg.typ)
-            if i < 4 and fits_register(arg.typ):
+            arg_type = get_arg_type(arg)
+            size = sizeof(arg_type)
+            if i < 4 and fits_register(arg_type):
                 # arguments passed by register
                 reg = new_reg()
                 self.emmit_one(assign(dest=reg, src=Register('a', str(i))))
-                self.scope.add(arg.name.val, Value(val=reg, in_mem=False, typ=arg.typ))
+                self.scope.add(arg.name.val, Value(val=reg, in_mem=False, typ=arg_type))
             else:
                 # arguments passed by memory
                 reg = new_reg()
                 self.emmit_one(IR('add', rd=reg, rs=REG_FP, rt=offset))
-                self.scope.add(arg.name.val, Value(val=reg, in_mem=True, typ=arg.typ)) 
+                self.scope.add(arg.name.val, Value(val=reg, in_mem=True, typ=arg_type)) 
             offset += size
 
         if self.func.body is not None:
@@ -667,7 +677,7 @@ class FunctionCompiler(object):
         '''
         offset = sizeof(func.ret)
         for i, arg in enumerate(args):
-            arg_type = func.args[i].typ
+            arg_type = get_arg_type(func.args[i])
             if i < 4 and fits_register(arg_type):
                 self.emmit_one(assign(dest=Register('a', str(i)), src=arg.val))
             else: # store argument in memory

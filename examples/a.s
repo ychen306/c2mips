@@ -1,5 +1,5 @@
 .data
-___str30:	.asciiz	"\n"
+___str31:	.asciiz	"\n"
 .text
 _sum_arr:
 	move	$fp,	$sp
@@ -32,14 +32,15 @@ main:
 	add	$sp,	$sp,	-16
 	sw	$ra,	12($sp)
 	add	$t2,	$sp,	0
+	move	$t2,	$t2
 	li	$t0,	0
 	add	$t0,	$t0,	$t2
 	li	$t1,	1
 	sw	$t1,	0($t0)
 	li	$t0,	4
-	add	$t1,	$t0,	$t2
-	li	$t0,	2
-	sw	$t0,	0($t1)
+	add	$t0,	$t0,	$t2
+	li	$t1,	2
+	sw	$t1,	0($t0)
 	li	$t0,	8
 	add	$t0,	$t0,	$t2
 	li	$t1,	3
@@ -54,7 +55,7 @@ main:
 	move	$a0,	$t0
 	jal	_print_int
 	add	$sp,	$sp,	4
-	la	$t0,	___str30
+	la	$t0,	___str31
 	add	$sp,	$sp,	-4
 	move	$a0,	$t0
 	jal	_print_str
