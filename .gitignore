@@ -1,2 +1,4 @@
 *.swp
 *.pyc 
+# I usually put crap here...
+t.py

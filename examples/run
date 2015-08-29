@@ -1,0 +1,1 @@
+../pycc $1 && spim -file a.s

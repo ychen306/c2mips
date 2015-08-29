@@ -11,7 +11,7 @@ void print_str(char *s);
 void print_int(int n);
 '''
 
-# TODO fix frame layout
+# TODO make sure `&arr == arr`
 
 # a value can either be a register or a constant.
 # a value can be in memory, regardless of its type 
@@ -195,6 +195,7 @@ bin_opcodes = {
     '==': 'seq',
     '!': 'sne'
 }
+binops = {v: k for k, v in bin_opcodes.iteritems()}
 
 
 def is_pointer(val):
@@ -306,10 +307,10 @@ def emmit_prefix_exp(compiler, exp):
     elif op == '*':
         typ = operand.typ.typ
         if not operand.in_mem:
-            return operand._replace(in_mem=True, typ=typ)
-        else: # e.g. field `foo` in `struct Bar {int *foo;}`
-            result = compiler.load(operand.val, typ=operand.typ)
-            return Value(val=result, in_mem=True, typ=typ) 
+            val = operand._replace(in_mem=True, typ=typ)
+        else:
+            val = operand._replace(typ=typ)
+        return val
 
 
 def emmit_chain_exp(compiler, exp):
@@ -346,7 +347,7 @@ def emmit_call_exp(compiler, exp):
     compiler.alloc_args(func, args)
     compiler.emmit_one(IR('jal', rs=funcname_to_branch(func_name), rd=None, rt=None)) 
     ret_val = None
-    if func.ret not in (None, 'void'):
+    if func.ret != 'void':
         if fits_register(func.ret):
             reg = new_reg()
             compiler.emmit_one(assign(dest=reg, src=REG_RET))
@@ -388,23 +389,56 @@ def emmit_assignment(compiler, assignment):
     return var
 
 
-# TODO
 def offsetof(typ, field):
-    pass
+    if typ not in layouts:
+        sizeof(typ)
+    return layouts[typ][field]
 
-# TODO this doensn't consider struct padding
+
+def pad(cursize, typ):
+    '''
+    append a `typ` on to memory of `cursize` 
+    get size of padding (which can be 0)
+
+    the memory would look like this
+    -----------------------
+    | cursize | pad |  |
+    -----------------------
+    '''
+    if type(typ) == ast.Array:
+        size = sizeof(typ.typ)
+    else:
+        size = sizeof(typ)
+    if size > 1 and cursize % 4 != 0:
+        p = 4 - cursize % 4
+    else:
+        p = 0
+    return p
+
+
+# mapping struct -> layout (mapping field -> offset)
+layouts = {}
 def sizeof(typ):
     '''
     return number of bytes of a typ
     '''
     if typ == 'void':
-        return 0
+        size = 0
     elif typ == 'int' or type(typ) == ast.Pointer:
-        return 4
+        size = 4
     elif typ == 'char':
-        return 1
-    elif type(typ) == ast.Struct:
-        return sum(sizeof(declr.typ) for declr in  typ.fields)
+        size = 1
+    elif type(typ) == ast.Struct: 
+        size = 0
+        layout = {}
+        for field in typ.fields:
+            offset = size + pad(size, field.typ)
+            size = offset + sizeof(field.typ)
+            layout[field.name] = offset 
+        layouts[typ] = layout
+    elif type(typ) == ast.Array:
+        size = sizeof(typ.typ) * typ.cap
+    return size
 
 
 def struct_offset(struct, field):
@@ -449,7 +483,10 @@ def mulof4(n):
     return a number such that it's
     the smallest number larger or equal than `n` and divisible by 4
     '''
-    return (n % 4) + n 
+    if n % 4 != 0:
+        return 4 - (n % 4) + n 
+    else:
+        return n
 
 
 # consider array here
@@ -526,6 +563,29 @@ class FunctionCompiler(object):
         
         reg_alloc.alloc(self)
         self.remove_placeholders()
+        self.fold_const()
+
+    def fold_const(self):
+        '''
+        constant folding;
+        this is actually more about producing syntactically correct assembly...
+        so that anything like `mul    $t0, 1, 4` will be elliminated....
+        '''
+        insts = []
+        for inst in self.insts:
+            if (type(inst) == IR and
+                    inst.opcode in binops and
+                    type(inst.rs) != Register and
+                    type(inst.rt) != Register): 
+                left = inst.rs
+                right = inst.rt
+                op = binops[inst.opcode]
+                # my mom should be proud that I am using eval here
+                folded = eval('%s %s %s' % (left, op, right))
+                inst = IR('li', rd=inst.rd, rs=grammar.Int(folded), rt=None)
+            insts.append(inst)
+        self.insts = insts
+
 
     def remove_placeholders(self):
         ''' 
@@ -596,7 +656,6 @@ class FunctionCompiler(object):
     def pop_scope(self):
         self.scope = self.scope.parent
 
-    # TODO insert padding to align address
     def alloc_args(self, func, args):
         ''' 
         move arguments (`args` is a list of `Value`s)
@@ -662,30 +721,58 @@ class FunctionCompiler(object):
         self.emmit_one(IR(opcode, rt=result, rs=addr, rd=offset))
         return result
 
-    # TODO deal with array and struct literal
+
     def declare(self, stmt): 
+        if type(stmt) == ast.Struct: # struct declaration
+            self.scope.add(stmt.name, stmt)
+            return
+
         reg = new_reg()
         if type(stmt) == ast.DeclrAssign:
             declr = stmt.declr
         else:
             declr = stmt
-        self.scope.add(declr.name.val,
-                Value(val=reg,
-                    typ=declr.typ,
-                    in_mem=False))
-        if type(stmt) == ast.DeclrAssign: 
-            self.exp(ast.Assignment(stmt.declr.name, stmt.val))
-
-    def delcare_struct(struct):
-        if struct.name is None:
-            # anonymous struct, nothing to do
-            return
-        self.scope.add(struct.name.val, struct) 
+        val = Value(val=reg,
+                typ=declr.typ,
+                in_mem=False)
+        if type(declr.typ) not in (ast.Array, ast.Struct):
+            self.scope.add(declr.name.val, val) 
+            if type(stmt) == ast.DeclrAssign: 
+                self.exp(ast.Assignment(stmt.declr.name, stmt.val))
+        else: # struct or array
+            if type(declr.typ) == ast.Array:
+                arr = declr.typ
+                val = val._replace(typ=ast.Pointer(typ=arr.typ))
+                # at least one of cap or initialing layout should be provided
+                if (arr.cap is None and
+                        (type(stmt) != ast.DeclrAssign or type(stmt.val) is not ast.Layout)):
+                    raise Exception("Invalid array declaration: no initiazlier")
+                if arr.cap is None:
+                    layout = stmt.val
+                    arr = arr._replace(cap=len(layout.fields))
+                offset = self.alloc(arr)
+            else: # struct
+                val = val._replace(in_mem=True)
+                struct = declr.typ 
+                # if no struct specs is provided, we look it up
+                # otherwise we record it for later use
+                if struct.fields is not None:
+                    self.scope.add(struct.name, struct)
+                else:
+                    struct = self.scope.lookup(struct.name)
+                offset = self.alloc(struct) 
+            # map value to mem. addr
+            self.emmit_one(IR('add', rd=reg, rs=REG_SP, rt=grammar.Int(offset)))
+            self.scope.add(declr.name.val, val) 
 
     def alloc(self, typ=None, size=None):
-        assert typ is not None or size is not None
-        offset = self.stack_size() 
-        self.allocated.append(size if size is not None else sizeof(typ))
+        assert type is not None or size is not None
+        cursize = self.stack_size()
+        padding = pad(cursize, typ) if typ is not None else 0
+        size = size if size is not None else sizeof(typ)
+        offset = cursize + padding 
+        total = padding + size 
+        self.allocated.append(total)
         return offset
 
     def stack_size(self):

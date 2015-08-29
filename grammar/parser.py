@@ -352,7 +352,7 @@ class Parser(object):
         '''
         while is_type_modifier(e):
             if type(e) == ast.Index:
-                typ = ast.Array(typ=typ, cap=e.index)
+                typ = ast.Array(typ=typ, cap=int(e.index.val))
                 e = e.array
             else:
                 typ = ast.Pointer(typ=typ)
@@ -360,7 +360,7 @@ class Parser(object):
                 
         if type(e) == ast.CallExpr: 
             return self.parse_declr_expr(
-                    ast.Function(ret=typ, args=e.args, body=None),
+                    ast.Function(ret=typ or 'void', args=e.args, body=None),
                     e.func)
         else:
             return ast.Declaration(typ=typ, name=e)
@@ -552,7 +552,7 @@ class Parser(object):
             self.expect('}')
         if name is None:
             self.error("Anonymous sturct unsupported")
-        return ast.Struct(name, fields)
+        return ast.Struct(name, tuple(fields))
 
     def program(self): 
         declrs = []
