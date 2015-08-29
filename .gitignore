@@ -1,5 +1,7 @@
 # i put crap here
 t.py
+# vim temp file
+*.swp
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
