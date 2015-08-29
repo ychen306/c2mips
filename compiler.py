@@ -270,9 +270,7 @@ def emmit_prefix_exp(compiler, exp):
     # ('++' and '--' has been desugared as '+=' ad '-=')
     op = exp.op
     result = new_reg()
-    operand = (compiler.exp_val(exp.expr)
-            if op in ('!', '-')
-            else compiler.exp(exp.expr))
+    operand = compiler.exp_val(exp.expr)
     if op == '!' or op == '-':
         opcode = 'not' if op == '!' else 'neg'
         compiler.emmit_one(IR(
@@ -306,18 +304,7 @@ def emmit_prefix_exp(compiler, exp):
         return val
     elif op == '*':
         typ = operand.typ.typ
-        if not operand.in_mem:
-            val = operand._replace(in_mem=True, typ=typ)
-        else:
-            # we have to load from memory.
-            # what this means is we have the operand being something like `a.ptr`,
-            # where `ptr` is a pointer
-            # and when we say `*a.ptr`, we actually need to emmit something like
-            # lw    $t0,    0($t1) # assuming $t1 is the addr. of ptr
-            # and return this `Value(typ=typ, val=$t0, in_mem=True)`
-            addr = compiler.load(operand.val)
-            val = Value(val=addr, in_mem=True, typ=typ)
-        return val
+        return operand._replace(in_mem=True, typ=typ)
 
 
 def emmit_chain_exp(compiler, exp):
