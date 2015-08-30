@@ -2,6 +2,8 @@
 t.py
 # vim temp file
 *.swp
+# default name for generated MIPS assembly
+a.s
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -16,7 +16,8 @@ reserved = {
         'sizeof',
         'typedef',
         'return',
-        'else'
+        'else',
+        'NULL' # the compiler is not written to work with CPP, so we basically manually translate NULL to 0
         }
 
 op_chars = {'&', '|', '+', '-', '*', '/', '>', '<', '%', '=', '!'}
@@ -104,7 +105,10 @@ class Lexer(object):
             s += self.ch()
             self.advance()
         if s in reserved:
-            return s, None
+            if s == 'NULL':
+                return 'INT', 0
+            else:
+                return s, None
         else:
             return 'IDENT', s
 

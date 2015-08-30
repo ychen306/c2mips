@@ -7,7 +7,7 @@ struct Foo  {
 
 struct Bar {
 	char c;
-	struct Foo foo;
+	struct Foo *foo;
 };
 
 int sum_foo(struct Foo *foo)
@@ -18,11 +18,12 @@ int sum_foo(struct Foo *foo)
 void main()
 {
 	struct Bar b;
-	b.foo.a = 1;
-	b.foo.b = 3;
-	b.foo.c = 5;
-	b.foo.d = 7;
-	int *p = &b;
-	print_int(sum_foo(p + 1)); // 16
+	struct Foo foo;
+	foo.a = 1;
+	foo.b = 3;
+	foo.c = 5;
+	foo.d = 7;
+	b.foo = &foo;
+	print_int(sum_foo(b.foo)); // 16
 	print_str("\n");
 }

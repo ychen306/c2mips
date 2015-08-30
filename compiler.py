@@ -75,7 +75,7 @@ def repr_ir(ir):
             fields = opcode, rd, rs, rt
         return '\t%s\t%s' % (fields[0], ',\t'.join(str(f) for f in fields[1:]))
     else:
-        return '\t'+str(ir)
+        return '\t' + type(ir).__name__
 
 
 def funcname_to_branch(func):
@@ -354,8 +354,15 @@ def emmit_postfix_exp(compiler, exp):
     return Value(val=prev_val, in_mem=False, typ=var.typ) 
 
 
+builtin_funcs = {
+    'offsetof'
+} 
+
+
 def emmit_call_exp(compiler, exp):
     func_name = exp.func.val
+    if func_name in builtin_funcs:
+        return call_builtin(exp)
     func = compiler.scope.lookup(func_name) 
     # all functions are called by value
     args = map(compiler.exp_val, exp.args)
@@ -418,7 +425,7 @@ exp_emmitters = {
     ast.PostfixExpr: emmit_postfix_exp,
     ast.ChainExpr: emmit_chain_exp,
     ast.CallExpr: emmit_call_exp,
-    ast.EmptyStmt: lambda compiler, _: compiler.emmit_one(NOP)
+    ast.EmptyStmt: lambda compiler, _: compiler.emmit_one(NOP())
 } 
 
 
