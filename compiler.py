@@ -208,6 +208,17 @@ def is_ptr_type(typ):
     return type(typ) in (ast.Array, ast.Pointer)
 
 
+struct_fields = {}
+def field_type(struct, field): 
+    if struct in struct_fields:
+        fields = struct_fields[struct]
+    else:
+        fields = {f.name.val: f.typ for f in struct.fields}
+        struct_fields[struct] = fields
+    return fields[field]
+
+
+
 def emmit_bin_exp(compiler, exp):
     if exp.op == '&&':
         left = compiler.exp_val(exp.left)
@@ -262,13 +273,24 @@ def emmit_bin_exp(compiler, exp):
         # the operator is either '.' or '->'
         # value of the struct will be a register
         # storing addr. of the struct in the memory
-        struct = compiler.exp(exp.left)
+        left = compiler.exp(exp.left)
+        if type(left.typ) == ast.Pointer and left.in_mem:
+            struct_addr = compiler.load(left.val, typ=left.typ)
+        else:
+            struct_addr = left.val
+        if exp.op == '.':
+            struct = left.typ
+        else: # pointer
+            struct = left.typ.typ
+        if struct.fields is None:
+            # we have to lookup the struct since no struct layout is given
+            struct = compiler.scope.lookup(struct.name.val)
         field = exp.right
         assert field.is_('IDENT') 
-        offset = offsetof(struct.typ, field) 
-        addr = new_reg()
-        compiler.emmit_one(IR(opcode='add', rs=struct.val, rt=offset, rd=addr))
-        return Value(val=addr, in_mem=True, typ=field.typ)
+        offset = offsetof(struct, field.val) 
+        field_addr = new_reg()
+        compiler.emmit_one(IR(opcode='add', rs=struct_addr, rt=offset, rd=field_addr))
+        return Value(val=field_addr, in_mem=True, typ=field_type(struct, field.val))
 
 
 def emmit_prefix_exp(compiler, exp): 
@@ -437,8 +459,9 @@ def sizeof(typ):
         for field in typ.fields:
             offset = size + pad(size, field.typ)
             size = offset + sizeof(field.typ)
-            layout[field.name] = offset 
+            layout[field.name.val] = offset 
         layouts[typ] = layout
+        size = mulof4(size)
     elif type(typ) == ast.Array:
         size = sizeof(typ.typ) * typ.cap
     return size
@@ -530,8 +553,7 @@ def get_arg_type(arg):
 class FunctionCompiler(object):
     '''
     generate code for a function
-    '''
-
+    ''' 
     def __init__(self, func_declr, global_env):
         self.func = func_declr.typ
         self.insts = []
@@ -736,10 +758,6 @@ class FunctionCompiler(object):
 
 
     def declare(self, stmt): 
-        if type(stmt) == ast.Struct: # struct declaration
-            self.scope.add(stmt.name, stmt)
-            return
-
         reg = new_reg()
         if type(stmt) == ast.DeclrAssign:
             declr = stmt.declr
@@ -763,9 +781,9 @@ class FunctionCompiler(object):
                 # if no struct specs is provided, we look it up
                 # otherwise we record it for later use
                 if struct.fields is not None:
-                    self.scope.add(struct.name, struct)
+                    self.scope.add(struct.name.val, struct)
                 else:
-                    struct = self.scope.lookup(struct.name)
+                    struct = self.scope.lookup(struct.name.val)
                 offset = self.alloc(struct) 
             # map value to mem. addr
             self.emmit_one(IR('add', rd=reg, rs=REG_SP, rt=grammar.Int(offset)))
@@ -814,6 +832,8 @@ class FunctionCompiler(object):
         typ = type(stmt)
         if typ == ast.If:
             self.if_(stmt, context)
+        elif typ == ast.Struct: # struct declaration
+            self.scope.add(stmt.name, stmt)
         elif (typ == ast.Declaration or
                 typ == ast.DeclrAssign):
             self.declare(stmt)
@@ -837,11 +857,12 @@ class FunctionCompiler(object):
     def return_(self, stmt):
         if stmt.val is not None:
             result = self.exp(stmt.val)
-            if fits_register(result.typ): 
+            ret_type = self.func.ret
+            if fits_register(ret_type): 
                 val = self.load(result.val, typ=resut.typ) if result.in_mem else result.val
                 self.emmit_one(assign(dest=REG_RET, src=val))
             else: 
-                size = grammar.Int(sizeof(result.typ))
+                size = grammar.Int(sizeof(ret_type))
                 dest = new_reg()
                 self.memcpy(src=result.reg, dest=REG_FP, size=size)
         self.emmit_one(Epilog()) 
@@ -919,6 +940,8 @@ def compile(src, out):
                 insts.extend(code)
             else: # data
                 declrs.append(code)
+        elif typ == ast.Struct:
+            global_env.add(stmt.name.val, stmt)
     out.write('.data\n')
     for declr in declrs:
         out.write(repr_data(declr)+'\n')

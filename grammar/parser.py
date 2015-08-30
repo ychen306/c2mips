@@ -553,7 +553,7 @@ class Parser(object):
             self.expect('}')
         if name is None:
             self.error("Anonymous sturct unsupported")
-        return ast.Struct(name, tuple(fields))
+        return ast.Struct(name, tuple(fields) if fields is not None else None)
 
     def program(self): 
         declrs = []
