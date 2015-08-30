@@ -9,7 +9,6 @@ int sum_arr(int arr[], int size)
 }
 
 
-
 void main()
 {
 	int arr[3];

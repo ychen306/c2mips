@@ -125,6 +125,8 @@ def desugar(node):
     typ = type(node)
     if typ == ast.Declaration:
         return ast.Declaration(node.name, desugar(node.typ))
+    elif typ == ast.DeclrAssign:
+        return ast.DeclrAssign(node.declr, desugar(node.val))
     elif typ == ast.Function: 
         return ast.Function(
                 args=node.args,
