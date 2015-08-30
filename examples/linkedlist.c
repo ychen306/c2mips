@@ -17,9 +17,10 @@ void main()
 	struct node *head;
 	struct node *snd;
 	struct node *trd;
-	head = sbrk(8);
-	snd = sbrk(8);
-	trd = sbrk(8);
+	int size = sizeof *head;
+	head = sbrk(size);
+	snd = sbrk(size);
+	trd = sbrk(size);
 	head->v = 1;
 	head->next = snd;
 	snd->v = 2;

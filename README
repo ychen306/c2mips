@@ -7,8 +7,8 @@ What's supported:
 		* array (pointer),
 		* string (0 terminated char array)
 	* arithmetic operators: +-*/ (including pointer arithmetic)
-	* sizeof
-	* ++ and -- operators 
+	* sizeof -- NOTE: due to my impatience and idiocy, `sizeof` only works for expressions. i.e. `sizeof(type_name)` won't work
+	* '++' and '--' operators 
 	* logical operator: not, and, or
 	* function
 	* loops - for/while (no do-while)

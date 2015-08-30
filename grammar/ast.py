@@ -8,6 +8,8 @@ Array = namedtuple('Array', ['typ', 'cap'])
 # e.g. {1,2,3}
 Layout = namedtuple('Layout', ['fields'])
 
+Sizeof = namedtuple('Sizeof', ['operand'])
+
 BinExpr = namedtuple('BinaryExpression', ['op', 'left', 'right'])
 PrefixExpr = namedtuple('PrefixExpr', ['op', 'expr'])
 PostfixExpr = namedtuple('PostfixExpr', ['op', 'expr'])

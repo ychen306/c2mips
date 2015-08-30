@@ -424,6 +424,13 @@ def emmit_assignment(compiler, assignment):
         compiler.emmit_one(assign(dest=dest, src=src))
     return var 
 
+
+def emmit_sizeof(compiler, exp):
+    typ = compiler.exp(exp.operand).typ
+    size = compiler.sizeof(typ)
+    return Value(val=grammar.Int(size), typ='int', in_mem=False)
+
+
 # cache for sizeof/offsetof
 # mapping struct -> layout (mapping field -> offset)
 layouts = {} 
@@ -435,6 +442,7 @@ exp_emmitters = {
     ast.PostfixExpr: emmit_postfix_exp,
     ast.ChainExpr: emmit_chain_exp,
     ast.CallExpr: emmit_call_exp,
+    ast.Sizeof: emmit_sizeof,
     ast.EmptyStmt: lambda compiler, _: compiler.emmit_one(NOP())
 } 
 

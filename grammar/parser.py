@@ -230,6 +230,22 @@ class Symbol(object):
         return self
 
 
+class Sizeof(object):
+    lbp = 140
+
+    def __init__(self, parser):
+        self.parser = parser
+
+    def __repr__(self):
+        return 'SIZEOF'
+
+    def is_(self, typ):
+        return typ == 'sizeof'
+
+    def nud(self):
+        return ast.Sizeof(self.parser.expression(150))
+
+
 class Operator(object):
     def __init__(self, parser, typ):
         self.parser = parser
@@ -303,6 +319,8 @@ class Parser(object):
             return Comma(self)
         elif typ in values:
             return Value(tok)
+        elif typ == 'sizeof':
+            return Sizeof(self)
         else:
             return Operator(self, typ) 
     
