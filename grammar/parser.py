@@ -88,6 +88,9 @@ def is_type_modifier(expr):
 
 
 class LeftBrace(object):
+    '''
+    parse array/struct initializer
+    '''
     lbp = 0 
 
     def __init__(self, parser):
@@ -101,7 +104,7 @@ class LeftBrace(object):
 
     def nud(self):
         self.parser.parsing_declr = False
-        layout = (self.parser.expression())
+        layout = self.parser.expression()
         if type(layout) == ast.ChainExpr:
             fields = layout.exprs
         else:
@@ -240,12 +243,12 @@ class Operator(object):
     
     @property
     def lbp(self):
-        if self.typ in precedence['infixl']:
+        if self.typ in precedence['prefix']:
+            return precedence['prefix'][self.typ]
+        elif self.typ in precedence['infixl']:
             return precedence['infixl'][self.typ]
         elif self.typ in precedence['infixr']:
             return precedence['infixr'][self.typ]
-        elif self.typ in precedence['prefix']:
-            return precedence['prefix'][self.typ]
 
     def nud(self): 
         if self.typ not in precedence['prefix']:
@@ -253,7 +256,7 @@ class Operator(object):
         else:
             return ast.PrefixExpr(
                     op=self.typ,
-                    expr=self.parser.expression(self.lbp-1))
+                    expr=self.parser.expression(150))
 
     def led(self, left):
         if self.typ in precedence['postfix']:

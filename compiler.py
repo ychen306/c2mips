@@ -92,11 +92,6 @@ def gensym(prefix=''):
     return '%s%d' % (prefix, sym_counter)
 
 
-def binexp_type(left, right):
-    larger_type = left if sizeof(left.typ) > sizeof(right.typ) else right
-    return larger_type.typ
-
-
 def new_reg():
     '''
     make a new virutal register
@@ -195,7 +190,7 @@ bin_opcodes = {
     '&': 'and',
     '|': 'or',
     '==': 'seq',
-    '!': 'sne'
+    '!=': 'sne'
 }
 binops = {v: k for k, v in bin_opcodes.iteritems()}
 
@@ -228,7 +223,7 @@ def emmit_bin_exp(compiler, exp):
         right = compiler.exp_val(exp.right)
         compiler.emmit_one(right_branch)
         compiler.emmit_one(IR('and', rs=left.val, rt=right.val, rd=result))
-        return Value(val=result, in_mem=False, typ=binexp_type(left, right)) 
+        return Value(val=result, in_mem=False, typ=compiler.binexp_type(left, right)) 
     elif exp.op == '||':
         left = compiler.exp_val(exp.left)
         right_branch = new_branch()
@@ -237,13 +232,13 @@ def emmit_bin_exp(compiler, exp):
         right = compiler.exp_val(exp.right)
         compiler.emmit_one(right_branch)
         compiler.emmit_one(IR('or', rs=left.val, rt=right.val, rd=result))
-        return Value(val=result, in_mem=False, typ=binexp_type(left, right)) 
+        return Value(val=result, in_mem=False, typ=compiler.binexp_type(left, right)) 
     elif exp.op in bin_opcodes:
         rs = left = compiler.exp_val(exp.left)
         rt = right = compiler.exp_val(exp.right) 
         exp_type = left.typ
         opcode = bin_opcodes[exp.op]
-        if is_pointer(left) or is_pointer(right):
+        if exp.op in ('+', '-') and (is_pointer(left) or is_pointer(right)):
             if is_pointer(left): 
                 exp_type = ast.Pointer(left.typ.typ)
                 ptr = left.val
@@ -255,7 +250,7 @@ def emmit_bin_exp(compiler, exp):
             offset = new_reg()
             compiler.emmit_one(IR(opcode='mul',
                 rs=idx,
-                rt=sizeof(exp_type.typ),
+                rt=compiler.sizeof(exp_type.typ),
                 rd=offset)) 
             rs_val = offset
             rt_val = ptr
@@ -287,7 +282,7 @@ def emmit_bin_exp(compiler, exp):
             struct = compiler.scope.lookup(struct.name.val)
         field = exp.right
         assert field.is_('IDENT') 
-        offset = offsetof(struct, field.val) 
+        offset = compiler.offsetof(struct, field.val) 
         field_addr = new_reg()
         compiler.emmit_one(IR(opcode='add', rs=struct_addr, rt=offset, rd=field_addr))
         return Value(val=field_addr, in_mem=True, typ=field_type(struct, field.val))
@@ -316,8 +311,7 @@ def emmit_prefix_exp(compiler, exp):
                     else operand.typ.typ)
             val_type = ast.Pointer(ptr_type)
             if type(operand.val) == Register:
-                # since the register already represents a memory address
-                # we simply change its annotation data accordingly
+                # the register already represents a memory address
                 val = operand._replace(typ=val_type, in_mem=False)
             else: # global variable
                 compiler.emmit_one(IR('la', rt=result, rs=operand.val, rd=grammar.Int(0)))
@@ -350,7 +344,7 @@ def emmit_postfix_exp(compiler, exp):
     prev_val = new_reg() # value of x++
     compiler.emmit_one(assign(dest=prev_val, src=compiler.exp_val(name).val))
     var = compiler.scope.lookup(name.val) # x itself
-    diff = sizeof(var.typ.typ) if is_pointer(var) else 1
+    diff = compiler.sizeof(var.typ.typ) if is_pointer(var) else 1
     post_val = new_reg()
     compiler.emmit_one(IR('add', rd=post_val, rs=prev_val, rt=grammar.Int(diff)))
     if var.in_mem:
@@ -366,8 +360,8 @@ def emmit_call_exp(compiler, exp):
     # all functions are called by value
     args = map(compiler.exp_val, exp.args)
     # extra space needed for arguments and return value
-    extra = sum(sizeof(get_arg_type(arg)) for arg in func.args) +\
-            sizeof(func.ret)
+    extra = sum(compiler.sizeof(get_arg_type(arg)) for arg in func.args) +\
+            compiler.sizeof(func.ret)
     compiler.emmit_one(SaveRegisters(extra))
     compiler.alloc_args(func, args)
     compiler.emmit_one(IR('jal', rs=funcname_to_branch(func_name), rd=None, rt=None)) 
@@ -383,7 +377,7 @@ def emmit_call_exp(compiler, exp):
             # we need to move return value into stack
             stack_offset = compiler.alloc(func.ret)
             compiler.emmit_one(IR('add', rd=ret_addr, rs=REG_SP, rt=stack_offset))
-            compiler.memcpy(src=REG_FP, dest=ret_addr, size=sizeof(func.ret))
+            compiler.memcpy(src=REG_FP, dest=ret_addr, size=compiler.sizeof(func.ret))
             ret_val = Value(val=ret_addr, in_mem=True, typ=func.ret)
     compiler.emmit_one(RestoreRegisters(extra))
     return ret_val
@@ -411,70 +405,11 @@ def emmit_assignment(compiler, assignment):
         compiler.store(src=frm, dest=dest, typ=var.typ)
     else: # assign
         compiler.emmit_one(assign(dest=dest, src=src))
-    return var
+    return var 
 
-
-def offsetof(typ, field):
-    if typ not in layouts:
-        sizeof(typ)
-    return layouts[typ][field]
-
-
-def pad(cursize, typ):
-    '''
-    append a `typ` on to memory of `cursize` 
-    get size of padding (which can be 0)
-
-    the memory would look like this
-    -----------------------
-    | cursize | pad |  |
-    -----------------------
-    '''
-    if type(typ) == ast.Array:
-        size = sizeof(typ.typ)
-    else:
-        size = sizeof(typ)
-    if size > 1 and cursize % 4 != 0:
-        p = 4 - cursize % 4
-    else:
-        p = 0
-    return p
-
-
+# cache for sizeof/offsetof
 # mapping struct -> layout (mapping field -> offset)
-layouts = {}
-def sizeof(typ):
-    '''
-    return number of bytes of a typ
-    '''
-    if typ == 'void':
-        size = 0
-    elif typ == 'int' or type(typ) == ast.Pointer:
-        size = 4
-    elif typ == 'char':
-        size = 1
-    elif type(typ) == ast.Struct: 
-        size = 0
-        layout = {}
-        for field in typ.fields:
-            offset = size + pad(size, field.typ)
-            size = offset + sizeof(field.typ)
-            layout[field.name.val] = offset 
-        layouts[typ] = layout
-        size = mulof4(size)
-    elif type(typ) == ast.Array:
-        size = sizeof(typ.typ) * typ.cap
-    return size
-
-
-def struct_offset(struct, field):
-    offset = 0;
-    for declr in struct.fields:
-        if declr.name.val == field.val: 
-            break
-        offset += sizeof(declr.typ)
-    return offset
-
+layouts = {} 
 
 exp_emmitters = {
     ast.Assignment: emmit_assignment,
@@ -574,11 +509,11 @@ class FunctionCompiler(object):
         self.emmit_many(
             funcname_to_branch(self.name),
             Prolog())
-        offset = sizeof(self.func.ret)
+        offset = self.sizeof(self.func.ret)
         # add arguments into scope
         for i, arg in enumerate(self.func.args):
             arg_type = get_arg_type(arg)
-            size = sizeof(arg_type)
+            size = self.sizeof(arg_type)
             if i < 4 and fits_register(arg_type):
                 # arguments passed by register
                 reg = new_reg()
@@ -599,6 +534,58 @@ class FunctionCompiler(object):
         reg_alloc.alloc(self)
         self.remove_placeholders()
         self.fold_const()
+
+    def binexp_type(self, left, right):
+        larger_type = left if self.sizeof(left.typ) > self.sizeof(right.typ) else right
+        return larger_type.typ 
+
+    def offsetof(self, typ, field):
+        if typ not in layouts:
+            self.sizeof(typ)
+        return layouts[typ][field] 
+    
+    def pad(self, cursize, typ):
+        '''
+        append a `typ` on to memory of `cursize` 
+        get size of padding (which can be 0)
+    
+        the memory would look like this
+        -----------------------
+        | cursize | pad |  |
+        -----------------------
+        '''
+        if type(typ) == ast.Array:
+            size = self.sizeof(typ.typ)
+        else:
+            size = self.sizeof(typ)
+        if size > 1 and cursize % 4 != 0:
+            p = 4 - cursize % 4
+        else:
+            p = 0
+        return p
+    
+    def sizeof(self, typ):
+        '''
+        return number of bytes of a typ
+        '''
+        if typ == 'int' or type(typ) == ast.Pointer:
+            size = 4
+        elif typ in ('char', 'void'):
+            size = 1
+        elif type(typ) == ast.Struct: 
+            if typ.fields is None: # struct without layout specs. need to lookup
+                typ = self.scope.lookup(typ.name.val)
+            size = 0
+            layout = {}
+            for field in typ.fields:
+                offset = size + self.pad(size, field.typ)
+                size = offset + self.sizeof(field.typ)
+                layout[field.name.val] = offset 
+            layouts[typ] = layout
+            size = mulof4(size)
+        elif type(typ) == ast.Array:
+            size = self.sizeof(typ.typ) * typ.cap
+        return size 
 
     def fold_const(self):
         '''
@@ -700,7 +687,7 @@ class FunctionCompiler(object):
         so that $sp points to base addr of the space
         reserved for saving return value.
         '''
-        offset = sizeof(func.ret)
+        offset = self.sizeof(func.ret)
         for i, arg in enumerate(args):
             arg_type = get_arg_type(func.args[i])
             if i < 4 and fits_register(arg_type):
@@ -712,7 +699,7 @@ class FunctionCompiler(object):
                 else:
                     val = arg.val
                 self.store(src=val, dest=REG_SP, offset=offset, typ=arg_type)
-            offset += sizeof(arg_type)
+            offset += self.sizeof(arg_type)
 
     # TODO load byte by bytes
     def memcpy(self, src, dest, size):
@@ -792,8 +779,8 @@ class FunctionCompiler(object):
     def alloc(self, typ=None, size=None):
         assert type is not None or size is not None
         cursize = self.stack_size()
-        padding = pad(cursize, typ) if typ is not None else 0
-        size = size if size is not None else sizeof(typ)
+        padding = self.pad(cursize, typ) if typ is not None else 0
+        size = size if size is not None else self.sizeof(typ)
         offset = cursize + padding 
         total = padding + size 
         self.allocated.append(total)
@@ -862,7 +849,7 @@ class FunctionCompiler(object):
                 val = self.load(result.val, typ=resut.typ) if result.in_mem else result.val
                 self.emmit_one(assign(dest=REG_RET, src=val))
             else: 
-                size = grammar.Int(sizeof(ret_type))
+                size = grammar.Int(self.sizeof(ret_type))
                 dest = new_reg()
                 self.memcpy(src=result.reg, dest=REG_FP, size=size)
         self.emmit_one(Epilog()) 

@@ -2,24 +2,24 @@ import re
 
 __all__ = ['Lexer']
 
-reserved = set([
-    'void', 
-    'char',
-    'int',
-    'float',
-    'for',
-    'while',
-    'break',
-    'continue',
-    'if',
-    'struct',
-    'sizeof',
-    'typedef',
-    'return',
-    'else'
-])
+reserved = {
+        'void', 
+        'char',
+        'int',
+        'float',
+        'for',
+        'while',
+        'break',
+        'continue',
+        'if',
+        'struct',
+        'sizeof',
+        'typedef',
+        'return',
+        'else'
+        }
 
-op_chars = set(['&', '|', '+', '-', '*', '/', '>', '<', '%', '='])
+op_chars = {'&', '|', '+', '-', '*', '/', '>', '<', '%', '=', '!'}
 
 
 class Lexer(object):
