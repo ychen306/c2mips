@@ -245,11 +245,11 @@ def emmit_bin_exp(compiler, exp):
         opcode = bin_opcodes[exp.op]
         if is_pointer(left) or is_pointer(right):
             if is_pointer(left): 
-                exp_type = left.typ
+                exp_type = ast.Pointer(left.typ.typ)
                 ptr = left.val
                 idx = right.val
             else:
-                exp_type = right.typ
+                exp_type = ast.Pointer(right.typ.typ)
                 ptr = right.val
                 idx = left.val 
             offset = new_reg()
