@@ -355,14 +355,24 @@ def emmit_postfix_exp(compiler, exp):
 
 
 builtin_funcs = {
-    'offsetof'
+    'sbrk'
 } 
+
+def emmit_builtin_func(compiler, exp):
+    func_name = exp.func.val
+    if func_name == 'sbrk': 
+        size = compiler.exp(exp.args[0]).val
+        compiler.emmit_many(
+                assign(dest=Register('a', 0), src=size),
+                assign(dest=REG_RET, src=grammar.Int(SBRK)),
+                Syscall())
+        return Value(typ=ast.Pointer('void'), in_mem=False, val=REG_RET)
 
 
 def emmit_call_exp(compiler, exp):
     func_name = exp.func.val
     if func_name in builtin_funcs:
-        return call_builtin(exp)
+        return emmit_builtin_func(compiler, exp)
     func = compiler.scope.lookup(func_name) 
     # all functions are called by value
     args = map(compiler.exp_val, exp.args)

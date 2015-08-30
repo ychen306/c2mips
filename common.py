@@ -7,6 +7,8 @@ REG_RET = Register('v', 0) # $v0
 REG_ZERO = Register('zero', None) # $zero
 REG_RA = Register('ra', None) # $ra
 
+SBRK = 9
+
 # quads. ir
 # format:
 #   jal  {rs} 
@@ -20,6 +22,7 @@ REG_RA = Register('ra', None) # $ra
 #     * load -- lbu, lhu, lui, lw === R[rt] = M[R[rs]+rd]
 IR = namedtuple('IR', ['opcode', 'rs', 'rt', 'rd'])
 NOP = namedtuple('nop', [])
+Syscall = namedtuple('syscall', [])
 # IR to store $t registers and allocate extra stack space for arguments before function call
 SaveRegisters = namedtuple('SaveRegisters', ['extra'])
 # IR to restore registers and deallocate space for arguments after function call 

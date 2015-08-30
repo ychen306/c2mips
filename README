@@ -1,12 +1,13 @@
 Compiler that compiles a subset of C to MIPS
 What's supported:
 	* types: struct,
-	int (4 byte),
-	char (1 byte),
-	pointer (4 byte),
-	array (pointer),
-	string (0 terminated char array)
+		* int (4 byte),
+		* char (1 byte),
+		* pointer (4 byte),
+		* array (pointer),
+		* string (0 terminated char array)
 	* arithmetic operators: +-*/ (including pointer arithmetic)
+	* sizeof
 	* ++ and -- operators 
 	* logical operator: not, and, or
 	* function
@@ -15,5 +16,6 @@ What's supported:
 	* types 
 	* line and block comment
 	* builtin (magic) funcitons
-	* print_str
-	* print_int
+		* print_str
+		* print_int
+		* sbrk
