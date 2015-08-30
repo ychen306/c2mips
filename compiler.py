@@ -199,7 +199,11 @@ binops = {v: k for k, v in bin_opcodes.iteritems()}
 
 
 def is_pointer(val):
-    return type(val.typ) == ast.Pointer
+    return is_ptr_type(val.typ)
+
+
+def is_ptr_type(typ):
+    return type(typ) in (ast.Array, ast.Pointer)
 
 
 def emmit_bin_exp(compiler, exp):
@@ -282,8 +286,11 @@ def emmit_prefix_exp(compiler, exp):
     elif op == '&':
         assert exp.expr.is_('IDENT') # you can only take address of a variable...
         var_name = exp.expr.val
-        if operand.in_mem:
-            val_type = ast.Pointer(operand.typ)
+        if operand.in_mem or type(operand.typ) == ast.Array:
+            ptr_type = (operand.typ
+                    if type(operand.typ) != ast.Array
+                    else operand.typ.typ)
+            val_type = ast.Pointer(ptr_type)
             if type(operand.val) == Register:
                 # since the register already represents a memory address
                 # we simply change its annotation data accordingly
@@ -746,7 +753,7 @@ class FunctionCompiler(object):
         else: # struct or array
             if type(declr.typ) == ast.Array:
                 arr = declr.typ
-                val = val._replace(typ=ast.Pointer(typ=arr.typ))
+                #val = val._replace(typ=ast.Pointer(typ=arr.typ))
                 offset = self.alloc(arr)
             else: # struct
                 val = val._replace(in_mem=True)

@@ -13,7 +13,7 @@ int sum_arr(int arr[], int size)
 void main()
 {
 	int arr[3];
-	int *p = arr;
+	int *p = &arr;
 	p[0] = 1; 
 	p[1] = 2;
 	p[2] = 3;
