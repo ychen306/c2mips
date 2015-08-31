@@ -58,6 +58,8 @@ def make_int_graph(cfg, liveouts):
             if reg in uninterfered or reg.typ != 'virtual':
                 continue
             g[defed].add(reg)
+            if reg not in g:
+                g[reg] = set()
             g[reg].add(defed)
 
     return g 

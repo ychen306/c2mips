@@ -16,6 +16,7 @@ void *global_base = NULL;
 
 struct block_meta *find_free_block(struct block_meta **last, int size) {
 	struct block_meta *current = global_base;
+
 	while (current && !(current->free && current->size >= size)) {
 		*last = current;
 		current = current->next;
@@ -26,14 +27,16 @@ struct block_meta *find_free_block(struct block_meta **last, int size) {
 struct block_meta *request_space(struct block_meta* last, int size) {
 	struct block_meta *block;
 	block = sbrk(0);
-	void *request = sbrk(size + sizeof(*block));
-	if (request == (void*) -1) {
+	void *request;
+	request = sbrk(size + sizeof(*block));
+	if (request == -1) {
 		return NULL; // sbrk failed.
 	}
 
 	if (last) { // NULL on first request.
 		last->next = block;
 	}
+
 	block->size = size;
 	block->next = NULL;
 	block->free = 0;
@@ -74,7 +77,7 @@ void *malloc(int size) {
 }
 
 struct block_meta *get_block_ptr(void *ptr) {
-	struct blockmeta *bptr = ptr;
+	struct block_meta *bptr = ptr;
 	return bptr - 1;
 }
 
@@ -86,4 +89,37 @@ void free(void *ptr) {
 	struct block_meta* block_ptr;
 	block_ptr = get_block_ptr(ptr);
 	block_ptr->free = 1;
+}
+
+struct node { 
+	int v;
+	struct node *next;
+};
+
+void print_list(struct node *n)
+{
+	while (n != NULL) {
+		print_int(n->v);
+		print_str(", ");
+		n = n->next;
+	}
+}
+
+void main()
+{
+	struct node *head;
+	struct node *snd;
+	struct node *trd;
+	int size = sizeof *head;
+	head = malloc(size);
+	snd = malloc(size);
+	trd = malloc(size);
+	head->v = 1;
+	head->next = snd;
+	snd->v = 2;
+	snd->next = trd;
+	trd->v = 3;
+	trd->next = NULL;
+	print_list(head);
+	print_str("\n");
 } 

@@ -41,7 +41,10 @@ def repr_register(reg):
         if num is None:
             num = ''
         return '$%s%s' % (typ, num) 
-    return reg
+    elif reg is None:
+        return ''
+    else:
+        return reg
 
 
 def assign(dest, src):
@@ -222,7 +225,7 @@ def emmit_bin_exp(compiler, exp):
         compiler.emmit_one(IR('beq', rs=left.val, rt=REG_ZERO, rd=right_branch))
         right = compiler.exp_val(exp.right)
         compiler.emmit_one(right_branch)
-        compiler.emmit_one(IR('and', rs=left.val, rt=right.val, rd=result))
+        compiler.emmit_one(IR('add', rs=left.val, rt=right.val, rd=result))
         return Value(val=result, in_mem=False, typ=compiler.binexp_type(left, right)) 
     elif exp.op == '||':
         left = compiler.exp_val(exp.left)
@@ -295,12 +298,18 @@ def emmit_prefix_exp(compiler, exp):
     result = new_reg()
     operand = compiler.exp_val(exp.expr) if op != '&' else compiler.exp(exp.expr)
     if op == '!' or op == '-':
-        opcode = 'not' if op == '!' else 'neg'
-        compiler.emmit_one(IR(
-            opcode=opcode,
-            rd=result,
-            rs=operand.val,
-            rt=None))
+        if op == '!':
+            compiler.emmit_one(IR(
+                opcode='seq',
+                rd=result,
+                rs=operand.val,
+                rt=REG_ZERO))
+        else:
+            compiler.emmit_one(IR(
+                opcode='sub',
+                rd=result,
+                rs=REG_ZERO,
+                rt=operand.val))
         return Value(val=result, typ=operand.typ, in_mem=False)
     elif op == '&':
         assert exp.expr.is_('IDENT') # you can only take address of a variable...
@@ -620,16 +629,20 @@ class FunctionCompiler(object):
         '''
         insts = []
         for inst in self.insts:
-            if (type(inst) == IR and
-                    inst.opcode in binops and
+            if type(inst) == IR:
+                if (inst.opcode in binops and
                     type(inst.rs) != Register and
                     type(inst.rt) != Register): 
-                left = inst.rs
-                right = inst.rt
-                op = binops[inst.opcode]
-                # my mom should be proud that I am using eval here
-                folded = eval('%s %s %s' % (left, op, right))
-                inst = IR('li', rd=inst.rd, rs=grammar.Int(folded), rt=None)
+                    left = inst.rs
+                    right = inst.rt
+                    op = binops[inst.opcode]
+                    # my mom should be proud that I am using eval here
+                    folded = eval('%s %s %s' % (left, op, right))
+                    inst = IR('li', rd=inst.rd, rs=grammar.Int(folded), rt=None)
+                elif inst.opcode == 'neg':
+                    if type(inst.rs) != Register:
+                        val = eval('-%s'% inst.rs)
+                        inst = IR('li', rd=inst.rd, rs=grammar.Int(val), rt=None)
             insts.append(inst)
         self.insts = insts
 
