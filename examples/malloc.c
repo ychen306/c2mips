@@ -28,7 +28,7 @@ struct block_meta *request_space(struct block_meta* last, int size) {
 	struct block_meta *block;
 	block = sbrk(0);
 	void *request;
-	request = sbrk(size + sizeof(*block));
+	request = sbrk(size + sizeof *block);
 	if (request == -1) {
 		return NULL; // sbrk failed.
 	}
@@ -112,7 +112,7 @@ struct node *make_list(int n)
 	int i;
 	for (i = 0; i < n; i++) { 
 		struct node *new;
-		new = malloc(sizeof *head);
+		new = malloc(sizeof *new);
 		new->v = i;
 		if (head == NULL) {
 			cur = head = new;
