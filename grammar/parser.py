@@ -381,9 +381,11 @@ class Parser(object):
                 e = e.expr
                 
         if type(e) == ast.CallExpr: 
-            return self.parse_declr_expr(
-                    ast.Function(ret=typ or 'void', args=e.args, body=None),
-                    e.func)
+            #return self.parse_declr_expr(
+            #        ast.Function(ret=typ or 'void', args=e.args, body=None),
+            #        e.func)
+            ret = self.parse_declr_expr(typ, e.func)
+            return ast.Declaration(name=ret.name, typ=ast.Function(ret=ret.typ, args=e.args, body=None))
         else:
             return ast.Declaration(typ=typ, name=e)
 
