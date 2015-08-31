@@ -224,8 +224,11 @@ def emmit_bin_exp(compiler, exp):
         result = new_reg()
         compiler.emmit_one(IR('beq', rs=left.val, rt=REG_ZERO, rd=right_branch))
         right = compiler.exp_val(exp.right)
+        right_bool = new_reg()
+        compiler.emmit_one(IR('sne', rd=right_bool, rs=right.val, rt=REG_ZERO))
         compiler.emmit_one(right_branch)
-        compiler.emmit_one(IR('add', rs=left.val, rt=right.val, rd=result))
+        compiler.emmit_one(IR('sne', rd=result, rs=left.val, rt=REG_ZERO))
+        compiler.emmit_one(IR('and', rd=result, rs=result, rt=right_bool)) 
         return Value(val=result, in_mem=False, typ=compiler.binexp_type(left, right)) 
     elif exp.op == '||':
         left = compiler.exp_val(exp.left)
