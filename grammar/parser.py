@@ -272,7 +272,7 @@ class Operator(object):
         else:
             return ast.PrefixExpr(
                     op=self.typ,
-                    expr=self.parser.expression(150))
+                    expr=self.parser.expression(self.lbp-1))
 
     def led(self, left):
         if self.typ in precedence['postfix']:
@@ -381,11 +381,9 @@ class Parser(object):
                 e = e.expr
                 
         if type(e) == ast.CallExpr: 
-            #return self.parse_declr_expr(
-            #        ast.Function(ret=typ or 'void', args=e.args, body=None),
-            #        e.func)
-            ret = self.parse_declr_expr(typ, e.func)
-            return ast.Declaration(name=ret.name, typ=ast.Function(ret=ret.typ, args=e.args, body=None))
+            return self.parse_declr_expr(
+                    ast.Function(ret=typ or 'void', args=e.args, body=None),
+                    e.func)
         else:
             return ast.Declaration(typ=typ, name=e)
 
