@@ -105,21 +105,28 @@ void print_list(struct node *n)
 	}
 }
 
+struct node *make_list(int n)
+{
+	struct node *cur;
+	struct node *head = NULL;
+	int i;
+	for (i = 0; i < n; i++) { 
+		struct node *new;
+		new = malloc(sizeof *head);
+		new->v = i;
+		if (head == NULL) {
+			cur = head = new;
+		} else {
+			cur->next = new;
+			cur = cur->next;
+		}
+	}
+	cur->next = NULL;
+	return head;
+}
+
 void main()
 {
-	struct node *head;
-	struct node *snd;
-	struct node *trd;
-	int size = sizeof *head;
-	head = malloc(size);
-	snd = malloc(size);
-	trd = malloc(size);
-	head->v = 1;
-	head->next = snd;
-	snd->v = 2;
-	snd->next = trd;
-	trd->v = 3;
-	trd->next = NULL;
-	print_list(head);
+	print_list(make_list(10));
 	print_str("\n");
 } 
