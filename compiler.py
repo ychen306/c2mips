@@ -11,7 +11,6 @@ void print_str(char *s);
 void print_int(int n);
 '''
 
-# TODO make sure `&arr == arr`
 
 # a value can either be a register or a constant.
 # a value can be in memory, regardless of its type 

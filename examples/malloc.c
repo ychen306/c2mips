@@ -127,6 +127,10 @@ struct node *make_list(int n)
 
 void main()
 {
-	print_list(make_list(10));
-	print_str("\n");
+	struct node *list;
+	list = make_list(10);
+	print_list(list); 
+	print_str("\ndone! \n");
+	free(list);
+	list->v; // something bad will happen!
 } 
