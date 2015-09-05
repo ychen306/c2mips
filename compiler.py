@@ -111,7 +111,7 @@ def new_loop():
     return Loop(start=new_branch(), cont=new_branch(), end=new_branch())
 
 
-augmented_assignment = set(['+=', '-=', '*=', '/=', '&=', '|=']) 
+augmented_assignment = {'+=', '-=', '*=', '/=', '&=', '|='}
 
 def desugar(node):
     ''' 
@@ -195,6 +195,7 @@ bin_opcodes = {
     '!=': 'sne'
 }
 binops = {v: k for k, v in bin_opcodes.iteritems()}
+commutative_ops = {'&&', '&', '|', '==', '!=', '*', '+'}
 
 
 def is_pointer(val):
@@ -238,17 +239,31 @@ def emmit_bin_exp(compiler, exp):
         compiler.emmit_one(right_branch)
         compiler.emmit_one(IR('or', rs=left.val, rt=right.val, rd=result))
         return Value(val=result, in_mem=False, typ=compiler.binexp_type(left, right)) 
-    # TODO: refactor out `rs` and `rt`
+    # TODO: refactor this hairy thing
     elif exp.op in bin_opcodes:
+        op = exp.op
         left = compiler.exp_val(exp.left)
         right = compiler.exp_val(exp.right)
-        if type(left.val) == grammar.Value:
-            left, right = right, left
+        # make sure it's syntactically correct MIPS
+        if type(left.val) == grammar.Value and type(right.val) == Register:
+            if op in commutative_ops:
+                left, right = right, left
+            elif op == '>':
+                left, right = right, left
+                op = '<'
+            elif op == '<':
+                left, right = right, left
+                op = '>'
+            else: # we have to load `left` into a register first
+                reg = new_reg()
+                compiler.emmit_one(assign(dest=reg, src=left.val))
+                left = left._replace(val=reg) 
+
         rs = left
         rt = right
         exp_type = left.typ
-        opcode = bin_opcodes[exp.op]
-        if exp.op in ('+', '-') and (is_pointer(left) or is_pointer(right)):
+        opcode = bin_opcodes[op]
+        if op in ('+', '-') and (is_pointer(left) or is_pointer(right)):
             if is_pointer(left): 
                 exp_type = ast.Pointer(left.typ.typ)
                 ptr = left.val
