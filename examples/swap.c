@@ -11,7 +11,7 @@ int main()
 	int b = 1;
 	swap(&a, &b);
 	print_int(a);
-	print_str("\n");
+	print_str("\n"); // 1
 	print_int(b);
-	print_str("\n");
+	print_str("\n"); // 42
 }
