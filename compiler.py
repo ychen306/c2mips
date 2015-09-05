@@ -413,23 +413,27 @@ def emmit_call_exp(compiler, exp):
 # TODO fixed potential bug induced by asisgning a struct to another struct
 def emmit_assignment(compiler, assignment):
     '''
-    emmit instruction of `a = b`, `*ptr = v`, etc
+    emmit instruction for `a = b`, `*ptr = v`, etc
     '''
     var = compiler.exp(assignment.name)
     val = compiler.exp(assignment.val)
-    if val.in_mem: # need to load first
+    dest = var.val
+    if fits_register(val.typ) and val.in_mem: # need to load first
         src = compiler.load(val.val, typ=val.typ)
     else:
         src = val.val
-    dest = var.val
+
     if var.in_mem: # store instead of assign
-        if type(src) != Register: # can only store value in register
-            reg = new_reg()
-            compiler.emmit_one(assign(dest=reg, src=src))
-            frm = reg
+        if fits_register(val.typ):
+            if type(src) != Register: # can only store value in register
+                reg = new_reg()
+                compiler.emmit_one(assign(dest=reg, src=src))
+                frm = reg
+            else:
+                frm = src
+            compiler.store(src=frm, dest=dest, typ=var.typ)
         else:
-            frm = src
-        compiler.store(src=frm, dest=dest, typ=var.typ)
+            compiler.memcpy(src=src, dest=var.val, size=compiler.sizeof(val.typ))
     else: # assign
         compiler.emmit_one(assign(dest=dest, src=src))
     return var 
@@ -760,7 +764,6 @@ class FunctionCompiler(object):
                     self.store(src=val, dest=REG_SP, offset=offset, typ=arg_type)
                 else:
                     addr = new_reg()
-                    print arg.val
                     self.emmit_one(IR('add', rd=addr, rs=REG_SP, rt=offset))
                     self.memcpy(src=arg.val, dest=addr, size=self.sizeof(arg_type))
 
@@ -833,8 +836,6 @@ class FunctionCompiler(object):
                 in_mem=False)
         if type(declr.typ) not in (ast.Array, ast.Struct):
             self.scope.add(declr.name.val, val) 
-            if type(stmt) == ast.DeclrAssign: 
-                self.exp(ast.Assignment(stmt.declr.name, stmt.val))
         else: # struct or array
             if type(declr.typ) == ast.Array:
                 arr = declr.typ
@@ -853,6 +854,8 @@ class FunctionCompiler(object):
             # map value to mem. addr
             self.emmit_one(IR('add', rd=reg, rs=REG_SP, rt=grammar.Int(offset)))
             self.scope.add(declr.name.val, val) 
+        if type(stmt) == ast.DeclrAssign: 
+            self.exp(ast.Assignment(stmt.declr.name, stmt.val))
 
     def alloc(self, typ=None, size=None):
         assert type is not None or size is not None
