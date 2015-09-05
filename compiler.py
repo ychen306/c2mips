@@ -51,6 +51,7 @@ def assign(dest, src):
     return IR(opcode, rd=dest, rs=src, rt=None) 
 
 
+# TODO deal with rs being immediate
 # TODO make this comprehensive
 def repr_ir(ir):
     '''
@@ -64,7 +65,7 @@ def repr_ir(ir):
         rs = repr_register(rs)
         rt = repr_register(rt)
         rd = repr_register(rd)
-        if opcode in ('beq', 'bne', 'blt', 'ble', 'bgt'):
+        if opcode in ('beq', 'bne', 'blt', 'ble', 'bgt', 'bge'):
             fields = opcode, rs, rt, rd 
         elif opcode in ('j', 'jal', 'jr'):
             fields = opcode, rs
@@ -385,13 +386,11 @@ def emmit_call_exp(compiler, exp):
     if func_name in builtin_funcs:
         return emmit_builtin_func(compiler, exp)
     func = compiler.scope.lookup(func_name) 
+    # TODO -- some values need to be loaded some do not
     # all functions are called by value
-    args = map(compiler.exp_val, exp.args)
-    # extra space needed for arguments and return value
-    extra = sum(compiler.sizeof(get_arg_type(arg)) for arg in func.args) +\
-            compiler.sizeof(func.ret)
-    compiler.emmit_one(SaveRegisters(extra))
-    compiler.alloc_args(func, args)
+    extra_size, layout = compiler.layout_args_and_retval(func)
+    compiler.emmit_one(SaveRegisters(extra_size))
+    compiler.alloc_args(func, exp.args, layout)
     compiler.emmit_one(IR('jal', rs=funcname_to_branch(func_name), rd=None, rt=None)) 
     ret_val = None
     if func.ret != 'void':
@@ -407,7 +406,7 @@ def emmit_call_exp(compiler, exp):
             compiler.emmit_one(IR('add', rd=ret_addr, rs=REG_SP, rt=stack_offset))
             compiler.memcpy(src=REG_FP, dest=ret_addr, size=compiler.sizeof(func.ret))
             ret_val = Value(val=ret_addr, in_mem=True, typ=func.ret)
-    compiler.emmit_one(RestoreRegisters(extra))
+    compiler.emmit_one(RestoreRegisters(extra_size))
     return ret_val
 
 
@@ -545,11 +544,11 @@ class FunctionCompiler(object):
         self.emmit_many(
             funcname_to_branch(self.name),
             Prolog())
-        offset = self.sizeof(self.func.ret)
+        _, layout = self.layout_args_and_retval(self.func)
         # add arguments into scope
         for i, arg in enumerate(self.func.args):
+            offset = layout[arg]
             arg_type = get_arg_type(arg)
-            size = self.sizeof(arg_type)
             if i < 4 and fits_register(arg_type):
                 # arguments passed by register
                 reg = new_reg()
@@ -560,7 +559,6 @@ class FunctionCompiler(object):
                 reg = new_reg()
                 self.emmit_one(IR('add', rd=reg, rs=REG_FP, rt=offset))
                 self.scope.add(arg.name.val, Value(val=reg, in_mem=True, typ=arg_type)) 
-            offset += size
 
         if self.func.body is not None:
             self.statement(self.func.body) 
@@ -570,6 +568,21 @@ class FunctionCompiler(object):
         reg_alloc.alloc(self)
         self.remove_placeholders()
         self.fold_const()
+
+    def layout_args_and_retval(self, func):
+        '''
+        layout args and ret values for call stack
+        ''' 
+        # mapping arg -> offset on stack
+        # return value is at offset 0
+        layout = {}
+        offset = self.sizeof(func.ret)
+        for arg in func.args: 
+            arg_type = get_arg_type(arg)
+            offset += self.pad(offset, arg_type)
+            layout[arg] = offset
+            offset += self.sizeof(arg_type)
+        return offset, layout 
 
     def binexp_type(self, left, right):
         larger_type = left if self.sizeof(left.typ) > self.sizeof(right.typ) else right
@@ -718,7 +731,7 @@ class FunctionCompiler(object):
     def pop_scope(self):
         self.scope = self.scope.parent
 
-    def alloc_args(self, func, args):
+    def alloc_args(self, func, args, layout):
         ''' 
         move arguments (`args` is a list of `Value`s)
         into either registers or memory
@@ -728,37 +741,62 @@ class FunctionCompiler(object):
         reserved for saving return value.
         '''
         offset = self.sizeof(func.ret)
-        for i, arg in enumerate(args):
+        for i, arg_exp in enumerate(args):
+            offset = layout[func.args[i]]
             arg_type = get_arg_type(func.args[i])
+            if fits_register(arg_type): 
+                arg = self.exp_val(arg_exp)
+            else:
+                arg = self.exp(arg_exp)
             if i < 4 and fits_register(arg_type):
                 self.emmit_one(assign(dest=Register('a', str(i)), src=arg.val))
             else: # store argument in memory
-                if type(arg.val) != Register: # can only store value in register
-                    val = new_reg()
-                    self.emmit_one(assign(dest=val, src=arg.val))
+                if fits_register(arg_type):
+                    if type(arg.val) != Register: # can only store value in register
+                        val = new_reg()
+                        self.emmit_one(assign(dest=val, src=arg.val))
+                    else:
+                        val = arg.val
+                    self.store(src=val, dest=REG_SP, offset=offset, typ=arg_type)
                 else:
-                    val = arg.val
-                self.store(src=val, dest=REG_SP, offset=offset, typ=arg_type)
-            offset += self.sizeof(arg_type)
+                    addr = new_reg()
+                    print arg.val
+                    self.emmit_one(IR('add', rd=addr, rs=REG_SP, rt=offset))
+                    self.memcpy(src=arg.val, dest=addr, size=self.sizeof(arg_type))
 
-    # TODO load byte by bytes
     def memcpy(self, src, dest, size):
-        offset = new_reg() 
+        '''
+        emmit code to copy `size` bytes from `src` to `dest`
+        NOTE: this function assumes both `src` and `dest` are aligned
+        '''
+        frm = new_reg() 
+        to = new_reg()
+        upper_bound = new_reg()
+        temp = new_reg()
         copy_loop = new_branch()
         copy_done = new_branch()
-        temp = new_reg()
         word_size = grammar.Int(4)
+        # size of memory that can be copied by words
+        aligned_size = size - size % 4
         self.emmit_many(
-            assign(dest=offset, src=REG_ZERO),
+            assign(dest=frm, src=src),
+            assign(dest=to, src=dest),
+            IR('add', rd=upper_bound, rs=frm, rt=grammar.Int(aligned_size)),
             copy_loop,
-            IR('bgt', rs=offset, rt=grammar.Int(size), rd=copy_done), 
-            IR('lw', rt=temp, rs=src, rd=offset),
-            IR('sw', rt=temp, rs=dest, rd=offset),
-            IR('add', rd=offset, rs=offset, rt=word_size),
-            IR('j', rs=copy_loop),
-            loop_one
+            IR('bge', rs=frm, rt=upper_bound, rd=copy_done),
+            IR('lw', rt=temp, rs=frm, rd=grammar.Int(0)),
+            IR('sw', rt=temp, rs=to, rd=grammar.Int(0)),
+            IR('add', rd=frm, rs=frm, rt=word_size),
+            IR('add', rd=to, rs=to, rt=word_size),
+            IR('j', rs=copy_loop, rd=None, rt=None),
+            copy_done
         )
-
+        # copy unaliged memory byte-by-byte
+        # note that this loop runs no more than three times
+        for offset in range(aligned_size, size):
+            load = IR('lb', rt=temp, rs=src, rd=offset)
+            store = IR('sb', rt=temp, rs=dest, rd=offset)
+            self.emmit_many(load, store)
 
     def emmit_one(self, inst):
         self.insts.append(inst) 
@@ -889,9 +927,10 @@ class FunctionCompiler(object):
                 val = self.load(result.val, typ=resut.typ) if result.in_mem else result.val
                 self.emmit_one(assign(dest=REG_RET, src=val))
             else: 
-                size = grammar.Int(self.sizeof(ret_type))
+                size = self.sizeof(ret_type)
                 dest = new_reg()
-                self.memcpy(src=result.reg, dest=REG_FP, size=size)
+                # result contains address of the value
+                self.memcpy(src=result.val, dest=REG_FP, size=size)
         self.emmit_one(Epilog()) 
 
     def exp(self, exp): 
