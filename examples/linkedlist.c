@@ -5,7 +5,7 @@ struct node {
 
 void print_list(struct node *n)
 {
-	while (n != NULL) {
+	while (NULL != n) {
 		print_int(n->v);
 		print_str(", ");
 		n = n->next;

@@ -9,8 +9,7 @@ from collections import namedtuple
 builtin_declrs = ''' 
 void print_str(char *s);
 void print_int(int n);
-'''
-
+''' 
 
 # a value can either be a register or a constant.
 # a value can be in memory, regardless of its type 
@@ -222,26 +221,31 @@ def emmit_bin_exp(compiler, exp):
         left = compiler.exp_val(exp.left)
         right_branch = new_branch()
         result = new_reg()
-        compiler.emmit_one(IR('beq', rs=left.val, rt=REG_ZERO, rd=right_branch))
+        compiler.emmit_one(IR('beq', rs=left.val, rt=grammar.Int(0), rd=right_branch))
         right = compiler.exp_val(exp.right)
         right_bool = new_reg()
-        compiler.emmit_one(IR('sne', rd=right_bool, rs=right.val, rt=REG_ZERO))
+        compiler.emmit_one(IR('sne', rd=right_bool, rs=right.val, rt=grammar.Int(0)))
         compiler.emmit_one(right_branch)
-        compiler.emmit_one(IR('sne', rd=result, rs=left.val, rt=REG_ZERO))
+        compiler.emmit_one(IR('sne', rd=result, rs=left.val, rt=grammar.Int(0)))
         compiler.emmit_one(IR('and', rd=result, rs=result, rt=right_bool)) 
         return Value(val=result, in_mem=False, typ=compiler.binexp_type(left, right)) 
     elif exp.op == '||':
         left = compiler.exp_val(exp.left)
         right_branch = new_branch()
         result = new_reg()
-        compiler.emmit_one(IR('bne', rs=left.val, rt=REG_ZERO, rd=right_branch))
+        compiler.emmit_one(IR('bne', rs=left.val, rt=grammar.Int(0), rd=right_branch))
         right = compiler.exp_val(exp.right)
         compiler.emmit_one(right_branch)
         compiler.emmit_one(IR('or', rs=left.val, rt=right.val, rd=result))
         return Value(val=result, in_mem=False, typ=compiler.binexp_type(left, right)) 
+    # TODO: refactor out `rs` and `rt`
     elif exp.op in bin_opcodes:
-        rs = left = compiler.exp_val(exp.left)
-        rt = right = compiler.exp_val(exp.right) 
+        left = compiler.exp_val(exp.left)
+        right = compiler.exp_val(exp.right)
+        if type(left.val) == grammar.Value:
+            left, right = right, left
+        rs = left
+        rt = right
         exp_type = left.typ
         opcode = bin_opcodes[exp.op]
         if exp.op in ('+', '-') and (is_pointer(left) or is_pointer(right)):
