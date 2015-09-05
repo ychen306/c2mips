@@ -259,6 +259,8 @@ class Operator(object):
     
     @property
     def lbp(self):
+        if self.typ == '=' and self.parser.parsing_declr:
+            return 0
         if self.typ in precedence['prefix']:
             return precedence['prefix'][self.typ]
         elif self.typ in precedence['infixl']:
@@ -409,17 +411,13 @@ class Parser(object):
         if type(base_typ) == ast.Struct and self.accept(';'): 
             return base_typ;
         declr_expr = self.expression()
-        val = None
         if type(declr_expr) == ast.ChainExpr:
             self.error("Multi-declaration not supported") 
-        if type(declr_expr) == ast.BinExpr:
-            if declr_expr.op != '=':
-                self.error("Illegal binary operator %s"% declr_expr.op) 
-            val = declr_expr.right
-            declr_expr = declr_expr.left
         declr = self.parse_declr_expr(base_typ, declr_expr)
         self.parsing_declr = False
-        if val is not None:
+        if self.accept('='):
+            self.advance();
+            val = self.expression()
             return ast.DeclrAssign(declr, val)
         else:
             return declr 
