@@ -21,4 +21,4 @@ What's supported:
     * print_int
     * sbrk
 
-NOTE: Tt doesn't have a type-checker (yet).
+NOTE: It doesn't have a type-checker (yet).
