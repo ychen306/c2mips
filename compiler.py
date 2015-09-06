@@ -50,7 +50,6 @@ def assign(dest, src):
     return IR(opcode, rd=dest, rs=src, rt=None) 
 
 
-# TODO deal with rs being immediate
 # TODO make this comprehensive
 def repr_ir(ir):
     '''
@@ -405,8 +404,6 @@ def emmit_call_exp(compiler, exp):
     if func_name in builtin_funcs:
         return emmit_builtin_func(compiler, exp)
     func = compiler.scope.lookup(func_name) 
-    # TODO -- some values need to be loaded some do not
-    # all functions are called by value
     extra_size, layout = compiler.layout_args_and_retval(func)
     compiler.emmit_one(SaveRegisters(extra_size))
     compiler.alloc_args(func, exp.args, layout)
@@ -429,7 +426,6 @@ def emmit_call_exp(compiler, exp):
     return ret_val
 
 
-# TODO fixed potential bug induced by asisgning a struct to another struct
 def emmit_assignment(compiler, assignment):
     '''
     emmit instruction for `a = b`, `*ptr = v`, etc
@@ -539,10 +535,6 @@ def get_arg_type(arg):
     return arg_type
 
 
-# TODO
-# abstract all store into a function to make 
-# sure constants are loaded into register
-# before being stored
 class FunctionCompiler(object):
     '''
     generate code for a function
@@ -826,7 +818,6 @@ class FunctionCompiler(object):
     def emmit_many(self, *insts):
         self.insts.extend(insts)
 
-    # TODO refactor all emmission of stores to use this function
     def store(self, src, dest, typ, offset=grammar.Int(0)): 
         if typ == 'char':
             opcode = 'sb'

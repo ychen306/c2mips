@@ -6,7 +6,7 @@ Pointer = namedtuple('Pointer', ['typ'])
 Array = namedtuple('Array', ['typ', 'cap'])
 
 # e.g. {1,2,3}
-Layout = namedtuple('Layout', ['fields'])
+Initializer = namedtuple('Initializer', ['fields'])
 
 Sizeof = namedtuple('Sizeof', ['operand'])
 

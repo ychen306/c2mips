@@ -111,7 +111,7 @@ class LeftBrace(object):
             fields = [layout]
         self.parser.parsing_declr = True
         self.parser.expect('}')
-        return ast.Layout(fields)
+        return ast.Initializer(fields)
 
 
 class LeftParen(object):
