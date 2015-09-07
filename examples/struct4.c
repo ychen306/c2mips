@@ -15,11 +15,16 @@ void print_foo(struct Foo f)
 	print_str("\n");
 }
 
-void main()
+struct Foo make_struct(int a, int b, int c)
 {
 	struct Foo f; 
-	f.a = 123;
-	f.b = 456;
-	f.c = 78;
-	print_foo(f);
+	f.a = a;
+	f.b = b;
+	f.c = c;
+	return f;
+}
+
+void main()
+{
+	print_foo(make_struct(123, 456, 78));
 }

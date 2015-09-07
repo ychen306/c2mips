@@ -11,7 +11,7 @@ void print_str(char *s);
 void print_int(int n);
 ''' 
 
-# a value can either be a register or a constant.
+# a value is either be a register or a constant.
 # a value can be in memory, regardless of its type 
 # e.g. `s.field` can be of type int but with its register
 # storing its address in the memory
@@ -399,6 +399,12 @@ def emmit_builtin_func(compiler, exp):
         return Value(typ=ast.Pointer('void'), in_mem=False, val=REG_RET)
 
 
+# FIXME
+# because SaveRegister is placed before argument evaluation
+# this won't work when arguments are expressions that has side effects (e.g. `foo(++x)`)
+# of course the register allocator detects that `x` lives through function
+# call and attempts to put `x` in s-registers. but in rare cases where
+# `x` is in t-register, `x`'s value won't be saved
 def emmit_call_exp(compiler, exp):
     func_name = exp.func.val
     if func_name in builtin_funcs:

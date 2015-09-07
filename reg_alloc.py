@@ -72,7 +72,8 @@ def alloc(compiler):
     k = 18 # s0 - s7 and t0 - t9
     insts = compiler.insts
     cfg = flow.make_cfg(insts)
-    _, liveouts = flow.get_lives(cfg)
+    _, liveouts = flow.get_lives(cfg) 
+
     coloring, uncolored = color(make_int_graph(cfg, liveouts), k) 
     while len(uncolored) > 0: # have to spill 
         spilled = set(uncolored)
