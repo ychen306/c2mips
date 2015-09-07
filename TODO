@@ -1,0 +1,2 @@
+1. write example/test for register spilling
+2. write example/test for saving t-regs for func calls
