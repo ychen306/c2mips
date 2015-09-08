@@ -72,7 +72,7 @@ class CFG(object):
 
     def get_calls(self):
         return (n for n, inst in self.vertices.iteritems()
-                if type(inst) == IR and inst.opcode == 'jal')
+                if type(inst) == Call)
 
 
 def make_cfg(insts):

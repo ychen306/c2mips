@@ -23,6 +23,8 @@ SBRK = 9
 IR = namedtuple('IR', ['opcode', 'rs', 'rt', 'rd'])
 NOP = namedtuple('nop', [])
 Syscall = namedtuple('syscall', [])
+# IR for calling function (store regs, jal, and restore regs)
+Call = namedtuple('Call', ['extra', 'name'])
 # IR to store $t registers and allocate extra stack space for arguments before function call
 SaveRegisters = namedtuple('SaveRegisters', ['extra'])
 # IR to restore registers and deallocate space for arguments after function call 

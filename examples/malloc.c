@@ -130,6 +130,6 @@ void main()
 	struct node *list = make_list(10);
 	print_list(list); 
 	print_str("\ndone! \n");
-	free(list);
+//	free(list);
 	list->v; // something bad will happen!
 } 

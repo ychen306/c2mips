@@ -399,21 +399,26 @@ def emmit_builtin_func(compiler, exp):
         return Value(typ=ast.Pointer('void'), in_mem=False, val=REG_RET)
 
 
-# FIXME
-# because SaveRegister is placed before argument evaluation
-# this won't work when arguments are expressions that has side effects (e.g. `foo(++x)`)
-# of course the register allocator detects that `x` lives through function
-# call and attempts to put `x` in s-registers. but in rare cases where
-# `x` is in t-register, `x`'s value won't be saved
+def emmit_eval_args(compiler, func, exps):
+    vals = []
+    for i, arg in enumerate(func.args): 
+        if fits_register(arg.typ):
+            val = compiler.exp_val(exps[i])
+        else:
+            val = compiler.exp(exps[i])
+        vals.append(val)
+    return vals 
+
+
 def emmit_call_exp(compiler, exp):
     func_name = exp.func.val
     if func_name in builtin_funcs:
         return emmit_builtin_func(compiler, exp)
     func = compiler.scope.lookup(func_name) 
     extra_size, layout = compiler.layout_args_and_retval(func)
-    compiler.emmit_one(SaveRegisters(extra_size))
-    compiler.alloc_args(func, exp.args, layout)
-    compiler.emmit_one(IR('jal', rs=funcname_to_branch(func_name), rd=None, rt=None)) 
+    args = emmit_eval_args(compiler, func, exp.args)
+    compiler.alloc_args(func, args, layout, extra_size)
+    compiler.emmit_one(Call(extra_size, func_name)) 
     ret_val = None
     if func.ret != 'void':
         if fits_register(func.ret):
@@ -428,7 +433,6 @@ def emmit_call_exp(compiler, exp):
             compiler.emmit_one(IR('add', rd=ret_addr, rs=REG_SP, rt=stack_offset))
             compiler.memcpy(src=REG_FP, dest=ret_addr, size=compiler.sizeof(func.ret))
             ret_val = Value(val=ret_addr, in_mem=True, typ=func.ret)
-    compiler.emmit_one(RestoreRegisters(extra_size))
     return ret_val
 
 
@@ -680,8 +684,7 @@ class FunctionCompiler(object):
                         val = eval('-%s'% inst.rs)
                         inst = IR('li', rd=inst.rd, rs=grammar.Int(val), rt=None)
             insts.append(inst)
-        self.insts = insts
-
+        self.insts = insts 
 
     def remove_placeholders(self):
         ''' 
@@ -693,8 +696,8 @@ class FunctionCompiler(object):
         # t registers that need to be saved
         tregs = []
         for node in sorted(cfg.get_calls()): 
-            tregs.append({reg for reg in outs[node]
-                if reg.typ == 't'})
+            tregs.append(sorted({reg for reg in outs[node]
+                if reg.typ == 't'}))
         space = (max(len(regs) for regs in tregs) * 4
                 if len(tregs) > 0
                 else 0) 
@@ -702,24 +705,23 @@ class FunctionCompiler(object):
         s_offset = self.alloc(size=len(self.sregs)*4+4)
         # replace prologs/epilogs with stores and loads
         insts = []
-        if len(tregs) > 0:
-            regs = tregs.pop()
-        else:
-            regs = []
+        i = 0
+        if i < len(tregs):
+            regs = tregs[i]
+            i += 1
         for inst in self.insts:
             inst_type = type(inst)
-            if inst_type == SaveRegisters: 
+            if inst_type == Call:
                 store_regs(regs, t_offset, insts)
                 insts.append(
                     IR('add', rd=REG_SP, rs=REG_SP, rt=grammar.Int(-mulof4(inst.extra))))
-            elif inst_type == RestoreRegisters:
-                load_regs(regs, t_offset, insts)
+                insts.append(IR('jal', rs=funcname_to_branch(inst.name), rt=None, rd=None))
                 insts.append(
                     IR('add', rd=REG_SP, rs=REG_SP, rt=grammar.Int(mulof4(inst.extra))))
-                if len(tregs) > 0:
-                    regs = tregs.pop()
-                else:
-                    regs = []
+                load_regs(regs, t_offset, insts)
+                if i < len(tregs):
+                    regs = tregs[i]
+                    i += 1
             elif inst_type == Prolog:
                 # grow stack and store needed s registers
                 grow = IR('add',
@@ -752,7 +754,7 @@ class FunctionCompiler(object):
     def pop_scope(self):
         self.scope = self.scope.parent
 
-    def alloc_args(self, func, args, layout):
+    def alloc_args(self, func, args, layout, extra):
         ''' 
         move arguments (`args` is a list of `Value`s)
         into either registers or memory
@@ -762,13 +764,9 @@ class FunctionCompiler(object):
         reserved for saving return value.
         '''
         offset = self.sizeof(func.ret)
-        for i, arg_exp in enumerate(args):
-            offset = layout[func.args[i]]
+        for i, arg in enumerate(args):
+            offset = layout[func.args[i]] - mulof4(extra)
             arg_type = get_arg_type(func.args[i])
-            if fits_register(arg_type): 
-                arg = self.exp_val(arg_exp)
-            else:
-                arg = self.exp(arg_exp)
             if i < 4 and fits_register(arg_type):
                 self.emmit_one(assign(dest=Register('a', str(i)), src=arg.val))
             else: # store argument in memory

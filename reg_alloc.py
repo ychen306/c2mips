@@ -85,16 +85,16 @@ def alloc(compiler):
             defed, used = flow.get_defuse(inst)
             for reg in used:
                 if reg in spilled: # load spilled from memory 
-                    new_insts.append(IR('load', rt=reg, rs=REG_SP, rd=addrs[reg]))
+                    new_insts.append(IR('lw', rt=reg, rs=REG_SP, rd=addrs[reg]))
             new_insts.append(inst)
             if defed in spilled: # store def
-                new_insts.append(IR('store', rt=defed, rs=REG_SP, rd=addrs[defed]))
+                new_insts.append(IR('sw', rt=defed, rs=REG_SP, rd=addrs[defed]))
         insts = new_insts
-        cfg = make_cfg(insts)
+        cfg = flow.make_cfg(insts)
         _, liveouts = flow.get_lives(cfg)
         coloring, uncolored = color(make_int_graph(cfg, liveouts), k) 
 
-    # keep register living across function calls (jal)
+    # keep register living across function calls
     # in saved register and the rest in temporarys 
     calls = cfg.get_calls()
     # colors that should be mapped in saved registers
