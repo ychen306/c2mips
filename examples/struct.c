@@ -13,10 +13,12 @@ int sum_foo(struct Foo *foo)
 void main()
 {
 	struct Foo foo;
+	int *p;
 	foo.a = 1;
 	foo.b = 2;
 	foo.c = 3;
-	foo.d = 4; 
-	print_int(sum_foo(&foo));
+	p = 3 + &(foo.c);
+	*p = 4;
+	print_int(sum_foo(&foo)); // 10
 	print_str("\n");
 }

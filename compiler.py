@@ -19,6 +19,8 @@ Value = namedtuple('Value', ['val', 'typ', 'in_mem'])
 
 # a foor loop
 Loop = namedtuple('Loop', ['start', 'cont', 'end']) 
+# offset of memory address
+Offset = namedtuple('Offset', ['base', 'offset'])
 
 
 def to_mips_type(ctype):
@@ -106,11 +108,13 @@ def new_branch():
     '''
     return gensym('branch_')
 
+
 def new_loop():
     return Loop(start=new_branch(), cont=new_branch(), end=new_branch())
 
 
 augmented_assignment = {'+=', '-=', '*=', '/=', '&=', '|='}
+
 
 def desugar(node):
     ''' 
@@ -215,7 +219,6 @@ def field_type(struct, field):
     return fields[field]
 
 
-
 def emmit_bin_exp(compiler, exp):
     if exp.op == '&&':
         left = compiler.exp_val(exp.left)
@@ -263,14 +266,9 @@ def emmit_bin_exp(compiler, exp):
         exp_type = left.typ
         opcode = bin_opcodes[op]
         if op in ('+', '-') and (is_pointer(left) or is_pointer(right)):
-            if is_pointer(left): 
-                exp_type = ast.Pointer(left.typ.typ)
-                ptr = left.val
-                idx = right.val
-            else:
-                exp_type = ast.Pointer(right.typ.typ)
-                ptr = right.val
-                idx = left.val 
+            exp_type = ast.Pointer(left.typ.typ)
+            ptr = left.val
+            idx = right.val
             offset = new_reg()
             compiler.emmit_one(IR(opcode='mul',
                 rs=idx,
@@ -307,8 +305,7 @@ def emmit_bin_exp(compiler, exp):
         field = exp.right
         assert field.is_('IDENT') 
         offset = compiler.offsetof(struct, field.val) 
-        field_addr = new_reg()
-        compiler.emmit_one(IR(opcode='add', rs=struct_addr, rt=offset, rd=field_addr))
+        field_addr = Offset(base=struct_addr, offset=offset)
         typ = field_type(struct, field.val)
         in_mem = type(typ) != ast.Array
         return Value(val=field_addr, in_mem=in_mem, typ=typ)
@@ -334,15 +331,16 @@ def emmit_prefix_exp(compiler, exp):
                 rs=REG_ZERO,
                 rt=operand.val))
         return Value(val=result, typ=operand.typ, in_mem=False)
+    elif op == '*':
+        typ = operand.typ.typ
+        return operand._replace(in_mem=True, typ=typ)
     elif op == '&':
-        assert exp.expr.is_('IDENT') # you can only take address of a variable...
-        var_name = exp.expr.val
         if operand.in_mem or type(operand.typ) == ast.Array:
             ptr_type = (operand.typ
                     if type(operand.typ) != ast.Array
                     else operand.typ.typ)
             val_type = ast.Pointer(ptr_type)
-            if type(operand.val) == Register:
+            if type(operand.val) in (Register, Offset):
                 # the register already represents a memory address
                 val = operand._replace(typ=val_type, in_mem=False)
             else: # global variable
@@ -356,12 +354,10 @@ def emmit_prefix_exp(compiler, exp):
             compiler.emmit_one(IR('add', rd=result, rs=REG_SP, rt=offset))
             # update the environment to point out that
             # the value is now in memory
+            var_name = exp.expr.val
             compiler.scope.add(var_name, Value(val=result, in_mem=True, typ=operand.typ))
             val = Value(in_mem=False, val=result, typ=ast.Pointer(operand.typ))
         return val
-    elif op == '*':
-        typ = operand.typ.typ
-        return operand._replace(in_mem=True, typ=typ)
 
 
 def emmit_chain_exp(compiler, exp):
@@ -393,7 +389,7 @@ builtin_funcs = {
 def emmit_builtin_func(compiler, exp):
     func_name = exp.func.val
     if func_name == 'sbrk': 
-        size = compiler.exp(exp.args[0]).val
+        size = compiler.exp_val(exp.args[0]).val
         compiler.emmit_many(
                 assign(dest=Register('a', 0), src=size),
                 assign(dest=REG_RET, src=grammar.Int(SBRK)),
@@ -787,7 +783,7 @@ class FunctionCompiler(object):
     def memcpy(self, src, dest, size):
         '''
         emmit code to copy `size` bytes from `src` to `dest`
-        NOTE: this function assumes both `src` and `dest` are aligned
+        NOTE: this function assumes that both `src` and `dest` are aligned
         '''
         frm = new_reg() 
         to = new_reg()
@@ -825,6 +821,8 @@ class FunctionCompiler(object):
         self.insts.extend(insts)
 
     def store(self, src, dest, typ, offset=grammar.Int(0)): 
+        if type(dest) == Offset:
+            dest, offset = dest
         if typ == 'char':
             opcode = 'sb'
         else:
@@ -832,6 +830,8 @@ class FunctionCompiler(object):
         self.emmit_one(IR(opcode, rt=src, rs=dest, rd=offset))
 
     def load(self, addr, typ, offset=grammar.Int(0)):
+        if type(addr) == Offset:
+            addr, offset = addr
         if typ == 'char':
             opcode = 'lb'
         else:
@@ -980,9 +980,12 @@ class FunctionCompiler(object):
         '''
         v = self.exp(e)
         if v.in_mem:
-            return v._replace(in_mem=False, val=self.load(v.val, typ=v.typ))
-        else:
-            return v
+            v = v._replace(in_mem=False, val=self.load(v.val, typ=v.typ))
+        elif type(v.val) == Offset:
+            addr = new_reg()
+            self.emmit_one(IR('add', rd=addr, rs=v.val.base, rt=v.val.offset))
+            v = v._replace(val=addr)
+        return v
 
 
 def compile_func(func, global_env, global_declrs):
