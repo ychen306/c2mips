@@ -309,7 +309,9 @@ def emmit_bin_exp(compiler, exp):
         offset = compiler.offsetof(struct, field.val) 
         field_addr = new_reg()
         compiler.emmit_one(IR(opcode='add', rs=struct_addr, rt=offset, rd=field_addr))
-        return Value(val=field_addr, in_mem=True, typ=field_type(struct, field.val))
+        typ = field_type(struct, field.val)
+        in_mem = type(typ) != ast.Array
+        return Value(val=field_addr, in_mem=in_mem, typ=typ)
 
 
 def emmit_prefix_exp(compiler, exp): 
@@ -885,7 +887,7 @@ class FunctionCompiler(object):
         return mulof4(sum(self.allocated))
 
     def if_(self, stmt, context):
-        cond = self.exp(stmt.cond)
+        cond = self.exp_val(stmt.cond)
         alt_branch = new_branch()
         done_branch = alt_branch if stmt.alt is None else new_branch()
         self.emmit_one(IR('beq', rs=cond.val, rt=REG_ZERO, rd=alt_branch))
@@ -900,7 +902,7 @@ class FunctionCompiler(object):
         self.exp(stmt.init)
         loop = new_loop()
         self.emmit_one(loop.start)
-        cond = self.exp(stmt.cond)
+        cond = self.exp_val(stmt.cond)
         self.emmit_one(IR('beq', rs=cond.val, rt=REG_ZERO, rd=loop.end))
         self.statement(stmt.body, context=loop)
         self.emmit_one(loop.cont)
@@ -941,7 +943,7 @@ class FunctionCompiler(object):
             result = self.exp(stmt.val)
             ret_type = self.func.ret
             if fits_register(ret_type): 
-                val = self.load(result.val, typ=resut.typ) if result.in_mem else result.val
+                val = self.load(result.val, typ=result.typ) if result.in_mem else result.val
                 self.emmit_one(assign(dest=REG_RET, src=val))
             else: 
                 size = self.sizeof(ret_type)

@@ -112,6 +112,9 @@ class Lexer(object):
         else:
             return 'IDENT', s
 
+    def char(self):
+        self.expect('\'')
+
     def operator(self):
         op = ''
         if self.ch() == '*' and self.peek() != '=':
@@ -129,6 +132,8 @@ class Lexer(object):
                 self.advance()
             elif ch.isalpha() or ch == '_':
                 yield self.ident()
+            elif ch == '\'':
+                yield self.char()
             elif ch == '"':
                 yield self.string()
             elif ch == '/' and self.peek() == '/':
