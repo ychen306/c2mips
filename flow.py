@@ -131,4 +131,4 @@ def get_lives(cfg):
                 num_fixed += 1
         if num_fixed == len(cfg.vertices.keys()):
             break
-    return in_, out 
+    return out 

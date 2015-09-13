@@ -38,7 +38,8 @@ def color(g, k):
     return coloring, uncolored
 
 
-def make_int_graph(cfg, liveouts):
+def make_int_graph(cfg):
+    liveouts = flow.get_lives(cfg)
     g = {}
     for n in cfg.vertices.keys():
         inst = cfg.inst(n)
@@ -62,7 +63,7 @@ def make_int_graph(cfg, liveouts):
                 g[reg] = set()
             g[reg].add(defed)
 
-    return g 
+    return g, liveouts
 
 def alloc(compiler):
     '''
@@ -72,9 +73,8 @@ def alloc(compiler):
     k = 18 # s0 - s7 and t0 - t9
     insts = compiler.insts
     cfg = flow.make_cfg(insts)
-    _, liveouts = flow.get_lives(cfg) 
-
-    coloring, uncolored = color(make_int_graph(cfg, liveouts), k) 
+    int_graph, liveouts = make_int_graph(cfg)
+    coloring, uncolored = color(int_graph, k) 
     while len(uncolored) > 0: # have to spill 
         spilled = set(uncolored)
         new_insts = []
@@ -91,8 +91,8 @@ def alloc(compiler):
                 new_insts.append(IR('sw', rt=defed, rs=REG_SP, rd=addrs[defed]))
         insts = new_insts
         cfg = flow.make_cfg(insts)
-        _, liveouts = flow.get_lives(cfg)
-        coloring, uncolored = color(make_int_graph(cfg, liveouts), k) 
+        int_graph, liveouts = make_int_graph(cfg)
+        coloring, uncolored = color(int_graph, k) 
 
     # keep register living across function calls
     # in saved register and the rest in temporarys 

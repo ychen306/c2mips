@@ -692,7 +692,7 @@ class FunctionCompiler(object):
         now that we know what registers are used
         '''
         cfg = flow.make_cfg(self.insts)
-        ins, outs = flow.get_lives(cfg)
+        outs = flow.get_lives(cfg)
         # t registers that need to be saved
         tregs = []
         for node in sorted(cfg.get_calls()): 
