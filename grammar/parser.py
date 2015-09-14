@@ -171,6 +171,7 @@ class Value(object):
     def __init__(self, (typ, val)):
         if typ == 'INT':
             typ = 'int'
+            val = int(val)
         self.typ = typ
         self.val = val 
 

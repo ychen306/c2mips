@@ -29,6 +29,11 @@ def to_mips_type(ctype):
     elif ctype == 'char':
         return 'byte' 
 
+
+def jump(target):
+    return IR(opcode='j', rs=target, rd=None, rt=None)
+
+
 def new_ir(opcode, rs, rt, rd): 
     if (opcode in binops and
         type(rs) != Register and
@@ -39,11 +44,23 @@ def new_ir(opcode, rs, rt, rd):
         # my mom should be proud that I am using eval here
         folded = eval('%s %s %s' % (left, op, right))
         inst = IR('li', rd=rd, rs=grammar.Int(folded), rt=None)
+    elif opcode == 'beq' and rs == rt:
+        inst = jump(rd)
+    elif (opcode == 'bne' and
+            type(rs) == grammar.Value and
+            type(rt) == grammar.Value):
+        if rs.val != rt.val:
+            inst = jump(rd)
+        else: # fallthrough
+            inst = NOP()
     elif opcode == 'neg':
         if type(rs) != Register:
             val = eval('-%s'% rs)
             inst = IR('li', rd=rd, rs=grammar.Int(val), rt=None)
     else:
+        if type(rs) == grammar.Value and type(rt) == Register:
+            # assuming opcode is commutative
+            rt, rs = rs, rt
         inst = IR(opcode, rs, rt, rd)
     return inst
 
@@ -160,7 +177,7 @@ def desugar(node):
                 desugar(node.body))
     elif typ == ast.If:
         return ast.If(
-                node.cond, 
+                desugar(node.cond), 
                 desugar(node.conseq),
                 desugar(node.alt))
     elif typ == ast.While: 
@@ -823,7 +840,7 @@ class FunctionCompiler(object):
             new_ir('sw', rt=temp, rs=to, rd=grammar.Int(0)),
             new_ir('add', rd=frm, rs=frm, rt=word_size),
             new_ir('add', rd=to, rs=to, rt=word_size),
-            new_ir('j', rs=copy_loop, rd=None, rt=None),
+            jump(copy_loop),
             copy_done
         )
         # copy unaliged memory byte-by-byte
@@ -911,7 +928,7 @@ class FunctionCompiler(object):
         done_branch = alt_branch if stmt.alt is None else new_branch()
         self.emmit_one(new_ir('beq', rs=cond.val, rt=REG_ZERO, rd=alt_branch))
         self.statement(stmt.conseq, context)
-        self.emmit_one(new_ir('j', rs=done_branch, rt=None, rd=None))
+        self.emmit_one(jump(done_branch))
         if stmt.alt is not None: 
             self.emmit_one(alt_branch)
             self.statement(stmt.alt, context)
@@ -927,7 +944,7 @@ class FunctionCompiler(object):
         self.emmit_one(loop.cont)
         self.exp(stmt.cont)
         self.emmit_many(
-            new_ir('j', rs=loop.start, rt=None, rd=None),
+            jump(loop.start),
             loop.end
         )
 
@@ -949,9 +966,9 @@ class FunctionCompiler(object):
             # every loop creates a new loop context
             self.for_(stmt)
         elif typ == ast.Break:
-            self.emmit_one(new_ir('j', rs=context.end, rt=None, rd=None)) 
+            self.emmit_one(jump(context.end)) 
         elif typ == ast.Continue:
-            self.emmit_one(new_ir('j', rs=context.cont, rt=None, rd=None))
+            self.emmit_one(jump(context.cont))
         elif typ == ast.Return: 
             self.return_(stmt)
         else:

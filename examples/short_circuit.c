@@ -30,4 +30,16 @@ void main()
 	print_str("result: ");
 	print_int(false || getone());
 	print_str("\n");
+	print_str("\n");
+
+	print_str("0 || 1:\n");
+	print_str("result: ");
+	print_int(0 || 1);
+	print_str("\n");
+	print_str("\n");
+
+	print_str("0 || getone():\n");
+	print_str("result: ");
+	print_int(0 || getone());
+	print_str("\n");
 } 
