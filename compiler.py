@@ -29,6 +29,24 @@ def to_mips_type(ctype):
     elif ctype == 'char':
         return 'byte' 
 
+def new_ir(opcode, rs, rt, rd): 
+    if (opcode in binops and
+        type(rs) != Register and
+        type(rt) != Register): 
+        left = rs
+        right = rt
+        op = binops[opcode]
+        # my mom should be proud that I am using eval here
+        folded = eval('%s %s %s' % (left, op, right))
+        inst = IR('li', rd=rd, rs=grammar.Int(folded), rt=None)
+    elif opcode == 'neg':
+        if type(rs) != Register:
+            val = eval('-%s'% rs)
+            inst = IR('li', rd=rd, rs=grammar.Int(val), rt=None)
+    else:
+        inst = IR(opcode, rs, rt, rd)
+    return inst
+
 
 def repr_data(data): 
     name, typ, init = data
@@ -49,7 +67,7 @@ def repr_register(reg):
 
 def assign(dest, src):
     opcode = 'move' if type(src) == Register else 'li'
-    return IR(opcode, rd=dest, rs=src, rt=None) 
+    return new_ir(opcode, rd=dest, rs=src, rt=None) 
 
 
 # TODO make this comprehensive
@@ -224,22 +242,22 @@ def emmit_bin_exp(compiler, exp):
         left = compiler.exp_val(exp.left)
         right_branch = new_branch()
         result = new_reg()
-        compiler.emmit_one(IR('beq', rs=left.val, rt=grammar.Int(0), rd=right_branch))
+        compiler.emmit_one(new_ir('beq', rs=left.val, rt=grammar.Int(0), rd=right_branch))
         right = compiler.exp_val(exp.right)
         right_bool = new_reg()
-        compiler.emmit_one(IR('sne', rd=right_bool, rs=right.val, rt=grammar.Int(0)))
+        compiler.emmit_one(new_ir('sne', rd=right_bool, rs=right.val, rt=grammar.Int(0)))
         compiler.emmit_one(right_branch)
-        compiler.emmit_one(IR('sne', rd=result, rs=left.val, rt=grammar.Int(0)))
-        compiler.emmit_one(IR('and', rd=result, rs=result, rt=right_bool)) 
+        compiler.emmit_one(new_ir('sne', rd=result, rs=left.val, rt=grammar.Int(0)))
+        compiler.emmit_one(new_ir('and', rd=result, rs=result, rt=right_bool)) 
         return Value(val=result, in_mem=False, typ=compiler.binexp_type(left, right)) 
     elif exp.op == '||':
         left = compiler.exp_val(exp.left)
         right_branch = new_branch()
         result = new_reg()
-        compiler.emmit_one(IR('bne', rs=left.val, rt=grammar.Int(0), rd=right_branch))
+        compiler.emmit_one(new_ir('bne', rs=left.val, rt=grammar.Int(0), rd=right_branch))
         right = compiler.exp_val(exp.right)
         compiler.emmit_one(right_branch)
-        compiler.emmit_one(IR('or', rs=left.val, rt=right.val, rd=result))
+        compiler.emmit_one(new_ir('or', rs=left.val, rt=right.val, rd=result))
         return Value(val=result, in_mem=False, typ=compiler.binexp_type(left, right)) 
     # TODO: refactor this hairy thing
     elif exp.op in bin_opcodes:
@@ -270,7 +288,7 @@ def emmit_bin_exp(compiler, exp):
             ptr = left.val
             idx = right.val
             offset = new_reg()
-            compiler.emmit_one(IR(opcode='mul',
+            compiler.emmit_one(new_ir(opcode='mul',
                 rs=idx,
                 rt=compiler.sizeof(exp_type.typ),
                 rd=offset)) 
@@ -280,7 +298,7 @@ def emmit_bin_exp(compiler, exp):
             rs_val = rs.val
             rt_val = rt.val 
         result = new_reg()
-        inst = IR(opcode=opcode,
+        inst = new_ir(opcode=opcode,
                 rs=rs_val,
                 rt=rt_val,
                 rd=result)
@@ -305,7 +323,9 @@ def emmit_bin_exp(compiler, exp):
         field = exp.right
         assert field.is_('IDENT') 
         offset = compiler.offsetof(struct, field.val) 
-        field_addr = Offset(base=struct_addr, offset=offset)
+        base = new_reg()
+        compiler.emmit_one(assign(dest=base, src=struct_addr))
+        field_addr = Offset(base=base, offset=offset)
         typ = field_type(struct, field.val)
         in_mem = type(typ) != ast.Array
         return Value(val=field_addr, in_mem=in_mem, typ=typ)
@@ -319,13 +339,13 @@ def emmit_prefix_exp(compiler, exp):
     operand = compiler.exp_val(exp.expr) if op != '&' else compiler.exp(exp.expr)
     if op == '!' or op == '-':
         if op == '!':
-            compiler.emmit_one(IR(
+            compiler.emmit_one(new_ir(
                 opcode='seq',
                 rd=result,
                 rs=operand.val,
                 rt=REG_ZERO))
         else:
-            compiler.emmit_one(IR(
+            compiler.emmit_one(new_ir(
                 opcode='sub',
                 rd=result,
                 rs=REG_ZERO,
@@ -344,14 +364,14 @@ def emmit_prefix_exp(compiler, exp):
                 # the register already represents a memory address
                 val = operand._replace(typ=val_type, in_mem=False)
             else: # global variable
-                compiler.emmit_one(IR('la', rt=result, rs=operand.val, rd=grammar.Int(0)))
+                compiler.emmit_one(new_ir('la', rt=result, rs=operand.val, rd=grammar.Int(0)))
                 val = Value(val=result, typ=val_type, in_mem=False)
         else:
             # value not in memory,
             # store it in memory and deref
             offset = grammar.Int(compiler.alloc(operand.typ))
             compiler.store(src=operand.val, dest=REG_SP, offset=offset, typ=operand.typ)
-            compiler.emmit_one(IR('add', rd=result, rs=REG_SP, rt=offset))
+            compiler.emmit_one(new_ir('add', rd=result, rs=REG_SP, rt=offset))
             # update the environment to point out that
             # the value is now in memory
             var_name = exp.expr.val
@@ -374,7 +394,7 @@ def emmit_postfix_exp(compiler, exp):
     var = compiler.scope.lookup(name.val) # x itself
     diff = compiler.sizeof(var.typ.typ) if is_pointer(var) else 1
     post_val = new_reg()
-    compiler.emmit_one(IR('add', rd=post_val, rs=prev_val, rt=grammar.Int(diff)))
+    compiler.emmit_one(new_ir('add', rd=post_val, rs=prev_val, rt=grammar.Int(diff)))
     if var.in_mem:
         compiler.store(src=post_val, dest=var.val, typ=var.typ)
     else:
@@ -428,7 +448,7 @@ def emmit_call_exp(compiler, exp):
             # frame will be shrinked to free space of addr and ret val
             # we need to move return value into stack
             stack_offset = compiler.alloc(func.ret)
-            compiler.emmit_one(IR('add', rd=ret_addr, rs=REG_SP, rt=stack_offset))
+            compiler.emmit_one(new_ir('add', rd=ret_addr, rs=REG_SP, rt=stack_offset))
             compiler.memcpy(src=REG_FP, dest=ret_addr, size=compiler.sizeof(func.ret))
             ret_val = Value(val=ret_addr, in_mem=True, typ=func.ret)
     return ret_val
@@ -524,7 +544,7 @@ def store_regs(regs, offset, insts):
     batch-store registers on stack
     '''
     for i, reg in enumerate(regs):
-        insts.append(IR('sw', rt=reg, rs=REG_SP, rd=offset+i*4))
+        insts.append(new_ir('sw', rt=reg, rs=REG_SP, rd=offset+i*4))
 
 
 def load_regs(regs, offset, insts):
@@ -532,7 +552,7 @@ def load_regs(regs, offset, insts):
     batch-load registers from stack
     '''
     for i, reg in enumerate(regs):
-        insts.append(IR('lw', rt=reg, rs=REG_SP, rd=offset+i*4))
+        insts.append(new_ir('lw', rt=reg, rs=REG_SP, rd=offset+i*4))
 
 
 def get_arg_type(arg):
@@ -580,7 +600,7 @@ class FunctionCompiler(object):
             else:
                 # arguments passed by memory
                 reg = new_reg()
-                self.emmit_one(IR('add', rd=reg, rs=REG_FP, rt=offset))
+                self.emmit_one(new_ir('add', rd=reg, rs=REG_FP, rt=offset))
                 self.scope.add(arg.name.val, Value(val=reg, in_mem=True, typ=arg_type)) 
 
         if self.func.body is not None:
@@ -590,7 +610,6 @@ class FunctionCompiler(object):
         
         reg_alloc.alloc(self)
         self.remove_placeholders()
-        self.fold_const()
 
     def layout_args_and_retval(self, func):
         '''
@@ -676,11 +695,11 @@ class FunctionCompiler(object):
                     op = binops[inst.opcode]
                     # my mom should be proud that I am using eval here
                     folded = eval('%s %s %s' % (left, op, right))
-                    inst = IR('li', rd=inst.rd, rs=grammar.Int(folded), rt=None)
+                    inst = new_ir('li', rd=inst.rd, rs=grammar.Int(folded), rt=None)
                 elif inst.opcode == 'neg':
                     if type(inst.rs) != Register:
                         val = eval('-%s'% inst.rs)
-                        inst = IR('li', rd=inst.rd, rs=grammar.Int(val), rt=None)
+                        inst = new_ir('li', rd=inst.rd, rs=grammar.Int(val), rt=None)
             insts.append(inst)
         self.insts = insts 
 
@@ -712,35 +731,35 @@ class FunctionCompiler(object):
             if inst_type == Call:
                 store_regs(regs, t_offset, insts)
                 insts.append(
-                    IR('add', rd=REG_SP, rs=REG_SP, rt=grammar.Int(-mulof4(inst.extra))))
-                insts.append(IR('jal', rs=funcname_to_branch(inst.name), rt=None, rd=None))
+                    new_ir('add', rd=REG_SP, rs=REG_SP, rt=grammar.Int(-mulof4(inst.extra))))
+                insts.append(new_ir('jal', rs=funcname_to_branch(inst.name), rt=None, rd=None))
                 insts.append(
-                    IR('add', rd=REG_SP, rs=REG_SP, rt=grammar.Int(mulof4(inst.extra))))
+                    new_ir('add', rd=REG_SP, rs=REG_SP, rt=grammar.Int(mulof4(inst.extra))))
                 load_regs(regs, t_offset, insts)
                 if i < len(tregs):
                     regs = tregs[i]
                     i += 1
             elif inst_type == Prolog:
                 # grow stack and store needed s registers
-                grow = IR('add',
+                grow = new_ir('add',
                         rd=REG_SP,
                         rs=REG_SP,
                         rt=grammar.Int(-self.stack_size()))
                 insts.extend([
-                        IR('move', rd=REG_FP, rs=REG_SP, rt=None),
+                        new_ir('move', rd=REG_FP, rs=REG_SP, rt=None),
                         grow
                         ])
                 store_regs(self.sregs+[REG_RA], s_offset, insts)
             elif inst_type == Epilog:
                 # restore used registers
                 load_regs(self.sregs+[REG_RA], s_offset, insts)
-                shrink = IR('add',
+                shrink = new_ir('add',
                         rd=REG_SP,
                         rs=REG_SP,
                         rt=grammar.Int(self.stack_size()))
                 insts.extend([ 
                     shrink,
-                    IR('jr', rs=Register('ra', None), rt=None, rd=None)
+                    new_ir('jr', rs=Register('ra', None), rt=None, rd=None)
                     ])
             else:
                 insts.append(inst)
@@ -777,7 +796,7 @@ class FunctionCompiler(object):
                     self.store(src=val, dest=REG_SP, offset=offset, typ=arg_type)
                 else:
                     addr = new_reg()
-                    self.emmit_one(IR('add', rd=addr, rs=REG_SP, rt=offset))
+                    self.emmit_one(new_ir('add', rd=addr, rs=REG_SP, rt=offset))
                     self.memcpy(src=arg.val, dest=addr, size=self.sizeof(arg_type))
 
     def memcpy(self, src, dest, size):
@@ -797,21 +816,21 @@ class FunctionCompiler(object):
         self.emmit_many(
             assign(dest=frm, src=src),
             assign(dest=to, src=dest),
-            IR('add', rd=upper_bound, rs=frm, rt=grammar.Int(aligned_size)),
+            new_ir('add', rd=upper_bound, rs=frm, rt=grammar.Int(aligned_size)),
             copy_loop,
-            IR('bge', rs=frm, rt=upper_bound, rd=copy_done),
-            IR('lw', rt=temp, rs=frm, rd=grammar.Int(0)),
-            IR('sw', rt=temp, rs=to, rd=grammar.Int(0)),
-            IR('add', rd=frm, rs=frm, rt=word_size),
-            IR('add', rd=to, rs=to, rt=word_size),
-            IR('j', rs=copy_loop, rd=None, rt=None),
+            new_ir('bge', rs=frm, rt=upper_bound, rd=copy_done),
+            new_ir('lw', rt=temp, rs=frm, rd=grammar.Int(0)),
+            new_ir('sw', rt=temp, rs=to, rd=grammar.Int(0)),
+            new_ir('add', rd=frm, rs=frm, rt=word_size),
+            new_ir('add', rd=to, rs=to, rt=word_size),
+            new_ir('j', rs=copy_loop, rd=None, rt=None),
             copy_done
         )
         # copy unaliged memory byte-by-byte
         # note that this loop runs no more than three times
         for offset in range(aligned_size, size):
-            load = IR('lb', rt=temp, rs=src, rd=offset)
-            store = IR('sb', rt=temp, rs=dest, rd=offset)
+            load = new_ir('lb', rt=temp, rs=src, rd=offset)
+            store = new_ir('sb', rt=temp, rs=dest, rd=offset)
             self.emmit_many(load, store)
 
     def emmit_one(self, inst):
@@ -827,7 +846,7 @@ class FunctionCompiler(object):
             opcode = 'sb'
         else:
             opcode = 'sw'
-        self.emmit_one(IR(opcode, rt=src, rs=dest, rd=offset))
+        self.emmit_one(new_ir(opcode, rt=src, rs=dest, rd=offset))
 
     def load(self, addr, typ, offset=grammar.Int(0)):
         if type(addr) == Offset:
@@ -837,7 +856,7 @@ class FunctionCompiler(object):
         else:
             opcode = 'lw'
         result = new_reg()
-        self.emmit_one(IR(opcode, rt=result, rs=addr, rd=offset))
+        self.emmit_one(new_ir(opcode, rt=result, rs=addr, rd=offset))
         return result
 
 
@@ -868,7 +887,7 @@ class FunctionCompiler(object):
                     struct = self.scope.lookup(struct.name.val)
                 offset = self.alloc(struct) 
             # map value to mem. addr
-            self.emmit_one(IR('add', rd=reg, rs=REG_SP, rt=grammar.Int(offset)))
+            self.emmit_one(new_ir('add', rd=reg, rs=REG_SP, rt=grammar.Int(offset)))
             self.scope.add(declr.name.val, val) 
         if type(stmt) == ast.DeclrAssign: 
             self.exp(ast.Assignment(stmt.declr.name, stmt.val))
@@ -890,9 +909,9 @@ class FunctionCompiler(object):
         cond = self.exp_val(stmt.cond)
         alt_branch = new_branch()
         done_branch = alt_branch if stmt.alt is None else new_branch()
-        self.emmit_one(IR('beq', rs=cond.val, rt=REG_ZERO, rd=alt_branch))
+        self.emmit_one(new_ir('beq', rs=cond.val, rt=REG_ZERO, rd=alt_branch))
         self.statement(stmt.conseq, context)
-        self.emmit_one(IR('j', rs=done_branch, rt=None, rd=None))
+        self.emmit_one(new_ir('j', rs=done_branch, rt=None, rd=None))
         if stmt.alt is not None: 
             self.emmit_one(alt_branch)
             self.statement(stmt.alt, context)
@@ -903,12 +922,12 @@ class FunctionCompiler(object):
         loop = new_loop()
         self.emmit_one(loop.start)
         cond = self.exp_val(stmt.cond)
-        self.emmit_one(IR('beq', rs=cond.val, rt=REG_ZERO, rd=loop.end))
+        self.emmit_one(new_ir('beq', rs=cond.val, rt=REG_ZERO, rd=loop.end))
         self.statement(stmt.body, context=loop)
         self.emmit_one(loop.cont)
         self.exp(stmt.cont)
         self.emmit_many(
-            IR('j', rs=loop.start, rt=None, rd=None),
+            new_ir('j', rs=loop.start, rt=None, rd=None),
             loop.end
         )
 
@@ -930,9 +949,9 @@ class FunctionCompiler(object):
             # every loop creates a new loop context
             self.for_(stmt)
         elif typ == ast.Break:
-            self.emmit_one(IR('j', rs=context.end, rt=None, rd=None)) 
+            self.emmit_one(new_ir('j', rs=context.end, rt=None, rd=None)) 
         elif typ == ast.Continue:
-            self.emmit_one(IR('j', rs=context.cont, rt=None, rd=None))
+            self.emmit_one(new_ir('j', rs=context.cont, rt=None, rd=None))
         elif typ == ast.Return: 
             self.return_(stmt)
         else:
@@ -969,7 +988,7 @@ class FunctionCompiler(object):
             str_name = gensym('___str')
             s = new_reg()
             self.declared_strs.append((str_name, exp.val))
-            self.emmit_one(IR('la', rt=s, rs=str_name, rd=grammar.Int(0)))
+            self.emmit_one(new_ir('la', rt=s, rs=str_name, rd=grammar.Int(0)))
             return Value(val=s, in_mem=False, typ=ast.Pointer('char'))
         else: # plain value 
             return Value(val=exp, in_mem=False, typ=exp.typ)
@@ -983,7 +1002,7 @@ class FunctionCompiler(object):
             v = v._replace(in_mem=False, val=self.load(v.val, typ=v.typ))
         elif type(v.val) == Offset:
             addr = new_reg()
-            self.emmit_one(IR('add', rd=addr, rs=v.val.base, rt=v.val.offset))
+            self.emmit_one(new_ir('add', rd=addr, rs=v.val.base, rt=v.val.offset))
             v = v._replace(val=addr)
         return v
 

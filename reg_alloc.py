@@ -126,6 +126,8 @@ def alloc(compiler):
                 rt = translations[coloring[rt]]
             if rd in coloring:
                 rd = translations[coloring[rd]]
+            if opcode == 'move' and rs == rd:
+                continue
             inst = IR(opcode, rs, rt, rd)
             if any(type(u) == Register and u.typ == 'virtual' for u in (rs, rt)):
                 # if there's any virtual registers left
