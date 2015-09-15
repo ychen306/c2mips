@@ -148,7 +148,7 @@ def new_loop():
     return Loop(start=new_branch(), cont=new_branch(), end=new_branch())
 
 
-augmented_assignment = {'+=', '-=', '*=', '/=', '&=', '|='}
+augmented_assignment = {'+=', '-=', '*=', '/=', '&=', '|=', '>>=', '<<=', '|=', '^='}
 
 
 def desugar(node):
@@ -190,7 +190,7 @@ def desugar(node):
         left = desugar(node.left)
         right = desugar(node.right)
         if node.op in augmented_assignment:
-            op = node.op[0]
+            op = node.op[:-1]
             return ast.Assignment(left, ast.BinExpr(op, left, right))
         elif node.op == '=':
             return ast.Assignment(left, right)
